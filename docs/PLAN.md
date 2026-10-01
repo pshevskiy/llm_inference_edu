@@ -167,11 +167,14 @@ All boxes start unchecked. When completing a ticket, add evidence directly benea
   No ancestor `AGENTS.md` was found in the inspected parent directories.
   There was no Rust package. `git status --short` exited 128 with "not a git
   repository"; no Git repository was initialized. Existing `AGENTS.md` and
-  `docs/FIRST_TASK.md` were preserved; only T00 was edited in this plan.
+  `docs/FIRST_TASK.md` were preserved during initial implementation; the owner
+  later requested removal of `docs/FIRST_TASK.md` from the repository.
+  Only T00 was edited in this plan.
 - **Files changed:** added `Cargo.toml`, generated dependency-free `Cargo.lock`,
   `rust-toolchain.toml`, `.gitignore`, `src/lib.rs`, `tests/linear.rs`,
-  `examples/linear.rs`, `docs/lessons/00-linear.md`, and the five evidence files
-  linked below; updated this T00 record. No dependencies were introduced.
+  `examples/linear.rs`, and `docs/lessons/00-linear.md`; updated this T00 record.
+  The five evidence logs below remain local in the ignored `docs/evidence/`
+  folder and are excluded from Git history. No dependencies were introduced.
 - **Observed host/toolchain:** macOS 26.6.2, build 25G83, Darwin 25.6.0, arm64;
   MacBookPro18,3, Apple M1 Pro, 10 CPU cores (8 performance + 2 efficiency),
   16 GB memory. `rustc -vV` reported Homebrew Rust 1.90.0, commit
@@ -194,17 +197,17 @@ All boxes start unchecked. When completing a ticket, add evidence directly benea
   sandbox ("Operation not permitted"). `/usr/sbin/system_profiler
   SPHardwareDataType` supplied the hardware facts instead, while warning
   "Error fetching hw.cpufamily: -1". The saved hardware output selects model,
-  chip, core count, and memory fields. See [host evidence](evidence/t00-host.txt).
+  chip, core count, and memory fields. Local log: `docs/evidence/t00-host.txt`.
   No hardware follow-up is required for T00; to retry the blocked query outside
   the sandbox, run `sysctl -n machdep.cpu.brand_string hw.memsize hw.ncpu`.
 - **Verification commands actually run:** `cargo fmt --all` (exit 0), then:
 
-  | Command | Actual result | Evidence |
+  | Command | Actual result | Local log (ignored) |
   |---|---|---|
-  | `cargo fmt --all -- --check` | exit 0, no diagnostics | [raw output, empty on success](evidence/t00-fmt.txt) |
-  | `cargo clippy --all-targets -- -D warnings` | exit 0, no warnings | [Clippy output](evidence/t00-clippy.txt) |
-  | `cargo test` | exit 0; 8 integration tests passed, 0 failed; 0 unit/doc tests | [test output](evidence/t00-test.txt) |
-  | `cargo run --example linear` | exit 0; `Y = [[-2.0, 4.0], [-2.0, 13.0]]` | [example output](evidence/t00-example.txt) |
+  | `cargo fmt --all -- --check` | exit 0, no diagnostics | `docs/evidence/t00-fmt.txt` (empty on success) |
+  | `cargo clippy --all-targets -- -D warnings` | exit 0, no warnings | `docs/evidence/t00-clippy.txt` |
+  | `cargo test` | exit 0; 8 integration tests passed, 0 failed; 0 unit/doc tests | `docs/evidence/t00-test.txt` |
+  | `cargo run --example linear` | exit 0; `Y = [[-2.0, 4.0], [-2.0, 13.0]]` | `docs/evidence/t00-example.txt` |
 
 - **Numerical/layout explanation:** `linear` first rejects zero dimensions,
   checks all three shape products, and validates exact slice lengths before
