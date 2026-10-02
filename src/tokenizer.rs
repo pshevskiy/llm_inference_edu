@@ -32,6 +32,7 @@ pub enum TokenizerError {
     UnsupportedAssets,
     EmptyMessages,
     InvalidToken(u32),
+    InvalidStream,
 }
 
 /// Renders only the pinned template's no-tools, plain-content branch. Each
@@ -63,6 +64,7 @@ pub fn render_chat(
 pub struct ChatTokenizer {
     tokenizer: Tokenizer,
     stop_tokens: Vec<usize>,
+    special_tokens: Vec<u32>,
 }
 impl ChatTokenizer {
     pub fn load(directory: &Path, inventory: &Inventory) -> Result<Self, TokenizerError> {
@@ -111,9 +113,15 @@ impl ChatTokenizer {
                 return Err(TokenizerError::UnsupportedAssets);
             }
         }
+        let special_tokens = tokenizer
+            .get_added_tokens_decoder()
+            .into_iter()
+            .filter_map(|(id, token)| token.special.then_some(id))
+            .collect();
         Ok(Self {
             tokenizer,
             stop_tokens,
+            special_tokens,
         })
     }
     pub fn encode(&self, text: &str) -> Result<Vec<usize>, TokenizerError> {
@@ -145,7 +153,94 @@ impl ChatTokenizer {
             .decode(&ids, skip_special)
             .map_err(|e| TokenizerError::Encoding(e.to_string()))
     }
+    /// Reuses the established context-aware decoder; incomplete trailing byte
+    /// tokens are withheld rather than printed as replacement characters.
+    pub fn text_stream(&self) -> TextStream<'_> {
+        TextStream {
+            tokenizer: self,
+            ids: Vec::new(),
+            prefix: String::new(),
+            prefix_index: 0,
+            valid: true,
+        }
+    }
     pub fn stop_tokens(&self) -> &[usize] {
         &self.stop_tokens
+    }
+}
+
+/// Text is only a presentation view; generation retains every original token ID.
+/// Unfinished decoder tokens remain pending at cancellation/output limits.
+pub struct TextStream<'a> {
+    tokenizer: &'a ChatTokenizer,
+    ids: Vec<u32>,
+    prefix: String,
+    prefix_index: usize,
+    valid: bool,
+}
+impl TextStream<'_> {
+    pub fn push(&mut self, id: usize) -> Result<Option<String>, TokenizerError> {
+        if !self.valid {
+            return Err(TokenizerError::InvalidStream);
+        }
+        let id = u32::try_from(id).map_err(|_| TokenizerError::UnsupportedAssets)?;
+        if self.tokenizer.tokenizer.id_to_token(id).is_none() {
+            return Err(TokenizerError::InvalidToken(id));
+        }
+        if self.tokenizer.special_tokens.contains(&id) {
+            return Ok(None);
+        }
+        match tokenizers::tokenizer::step_decode_stream(
+            &self.tokenizer.tokenizer,
+            id,
+            true,
+            &mut self.ids,
+            &mut self.prefix,
+            &mut self.prefix_index,
+        ) {
+            Ok(text) => Ok(text),
+            Err(error) => {
+                self.valid = false;
+                Err(TokenizerError::Encoding(error.to_string()))
+            }
+        }
+    }
+    pub fn pending_tokens(&self) -> usize {
+        self.ids.len().saturating_sub(self.prefix_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn split_utf8_is_buffered_until_complete_and_stop_tokens_are_hidden() {
+        let model: tokenizers::models::bpe::BPE =
+            serde_json::from_str(r#"{"vocab":{"Ã":0,"©":1,"x":2},"merges":[]}"#).unwrap();
+        let mut tokenizer = Tokenizer::new(model);
+        tokenizer.with_decoder(Some(
+            tokenizers::pre_tokenizers::byte_level::ByteLevel::default(),
+        ));
+        tokenizer.add_special_tokens(&[tokenizers::AddedToken::from("<stop>", true)]);
+        let stop = tokenizer.token_to_id("<stop>").unwrap();
+        let chat = ChatTokenizer {
+            tokenizer,
+            stop_tokens: vec![stop as usize],
+            special_tokens: vec![stop],
+        };
+        let mut stream = chat.text_stream();
+        assert_eq!(stream.push(0).unwrap(), None);
+        assert_eq!(stream.pending_tokens(), 1);
+        assert!(matches!(
+            stream.push(99),
+            Err(TokenizerError::InvalidToken(99))
+        ));
+        assert_eq!(stream.pending_tokens(), 1);
+        assert_eq!(stream.push(1).unwrap(), Some("é".into()));
+        assert_eq!(stream.pending_tokens(), 0);
+        assert_eq!(stream.push(2).unwrap(), Some("x".into()));
+        assert_eq!(stream.push(stop as usize).unwrap(), None);
+        assert_eq!(stream.pending_tokens(), 0);
+        assert_eq!(chat.decode(&[0, 1, 2, stop as usize], true).unwrap(), "éx");
     }
 }

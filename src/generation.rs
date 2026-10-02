@@ -79,3 +79,184 @@ pub fn uncached_greedy(
         stop: StopReason::OutputLimit,
     })
 }
+
+use crate::kv_cache::{CacheError, CachedSession};
+use crate::sampling::{Sampler, Sampling, SamplingError};
+use std::sync::atomic::{AtomicBool, Ordering};
+#[derive(Debug)]
+pub enum StateError {
+    InvalidParameters,
+    NotStarted,
+    AlreadyStarted,
+    Cancelled,
+    Cache(CacheError),
+    Sampling(SamplingError),
+}
+
+/// History owns every admitted/emitted ID. Cache owns only the evaluated prefix.
+/// At a successful emission exactly one history token is pending evaluation.
+pub struct GenerationSession<'a> {
+    cache: CachedSession<'a>,
+    sampler: Sampler,
+    history: Vec<usize>,
+    logits: Option<Vec<f32>>,
+    stops: Vec<usize>,
+    max_new: usize,
+    generated: usize,
+    stop: Option<StopReason>,
+    vocab: usize,
+}
+impl<'a> GenerationSession<'a> {
+    pub fn new(
+        model: &'a Decoder,
+        capacity: usize,
+        policy: Sampling,
+        stops: &[usize],
+        max_new: usize,
+    ) -> Result<Self, StateError> {
+        let vocab = model.config().vocab_size;
+        if max_new == 0 || max_new >= capacity || stops.iter().any(|&id| id >= vocab) {
+            return Err(StateError::InvalidParameters);
+        }
+        let sampler = Sampler::new(policy).map_err(StateError::Sampling)?;
+        sampler
+            .validate_vocab(vocab)
+            .map_err(StateError::Sampling)?;
+        Ok(Self {
+            cache: CachedSession::new(model, capacity).map_err(StateError::Cache)?,
+            sampler,
+            history: Vec::with_capacity(capacity),
+            logits: None,
+            stops: stops.to_vec(),
+            max_new,
+            generated: 0,
+            stop: None,
+            vocab,
+        })
+    }
+    pub fn start(&mut self, prompt: &[usize]) -> Result<(), StateError> {
+        self.start_with_cancel(prompt, &AtomicBool::new(false))
+    }
+    /// Admits the whole prompt before evaluation. Cancellation during serial
+    /// prefill retains its exact history and valid processed prefix; next_token
+    /// resumes the remaining prompt before sampling anything.
+    pub fn start_with_cancel(
+        &mut self,
+        prompt: &[usize],
+        cancel: &AtomicBool,
+    ) -> Result<(), StateError> {
+        if !self.history.is_empty() {
+            return Err(StateError::AlreadyStarted);
+        }
+        if prompt.is_empty()
+            || prompt.iter().any(|&id| id >= self.vocab)
+            || prompt
+                .len()
+                .checked_add(self.max_new)
+                .is_none_or(|n| n > self.cache.capacity())
+        {
+            return Err(StateError::InvalidParameters);
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(StateError::Cancelled);
+        }
+        if !self.cache.is_valid() {
+            return Err(StateError::Cache(CacheError::InvalidState));
+        }
+        self.history.extend_from_slice(prompt);
+        self.evaluate_pending(cancel)
+    }
+    fn evaluate_pending(&mut self, cancel: &AtomicBool) -> Result<(), StateError> {
+        while self.cache.processed() < self.history.len() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(StateError::Cancelled);
+            }
+            let token = self.history[self.cache.processed()];
+            self.logits = None;
+            self.logits = Some(self.cache.step(token).map_err(StateError::Cache)?);
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(StateError::Cancelled);
+        }
+        Ok(())
+    }
+    pub fn history(&self) -> &[usize] {
+        &self.history
+    }
+    pub fn processed(&self) -> usize {
+        self.cache.processed()
+    }
+    pub fn is_valid(&self) -> bool {
+        self.cache.is_valid()
+    }
+    pub fn stop_reason(&self) -> Option<StopReason> {
+        self.stop
+    }
+    pub fn generated(&self) -> usize {
+        self.generated
+    }
+    pub fn reset(&mut self) {
+        self.cache.reset();
+        self.history.clear();
+        self.logits = None;
+        self.generated = 0;
+        self.stop = None;
+        self.sampler.reset();
+    }
+    /// Cancellation is cooperative at token boundaries (before stepping and
+    /// again before sampling). It preserves history, seed stream and valid KV.
+    /// A token step already in progress finishes; no partially valid cache.
+    pub fn next_token(&mut self, cancel: &AtomicBool) -> Result<Option<usize>, StateError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(StateError::Cancelled);
+        }
+        if !self.cache.is_valid() {
+            return Err(StateError::Cache(CacheError::InvalidState));
+        }
+        if self.history.is_empty() {
+            return Err(StateError::NotStarted);
+        }
+        if self.stop.is_some() {
+            return Ok(None);
+        }
+        self.evaluate_pending(cancel)?;
+        let next = self
+            .sampler
+            .sample(self.logits.as_deref().ok_or(StateError::NotStarted)?)
+            .map_err(StateError::Sampling)?;
+        self.history.push(next);
+        self.generated += 1;
+        self.logits = None;
+        if self.stops.contains(&next) {
+            self.stop = Some(StopReason::StopToken);
+        } else if self.generated == self.max_new {
+            self.stop = Some(StopReason::OutputLimit);
+        }
+        Ok(Some(next))
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+    #[test]
+    fn interrupted_prefill_resumes_missing_prompt_tokens_in_order() {
+        let model = Decoder::from_json(include_str!("../fixtures/tiny-model.json")).unwrap();
+        let mut state = GenerationSession::new(&model, 32, Sampling::Greedy, &[], 1).unwrap();
+        // Exact reachable state at a cancellation boundary after first token:
+        // the entire prompt is admitted, only its first token has been evaluated.
+        state.history.extend_from_slice(&[1, 5, 7]);
+        state.logits = Some(state.cache.step(1).unwrap());
+        let cancel = AtomicBool::new(true);
+        assert!(matches!(
+            state.next_token(&cancel),
+            Err(StateError::Cancelled)
+        ));
+        assert_eq!(state.processed(), 1);
+        assert_eq!(state.history(), [1, 5, 7]);
+        cancel.store(false, Ordering::Relaxed);
+        assert_eq!(state.next_token(&cancel).unwrap(), Some(41));
+        assert_eq!(state.processed(), 3);
+        assert_eq!(state.history(), [1, 5, 7, 41]);
+    }
+}

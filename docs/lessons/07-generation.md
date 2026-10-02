@@ -25,10 +25,11 @@ once at the end, avoiding partial-byte token printing. Generated text is stdout;
 load/generation durations and stop reason are stderr. No streaming yet.
 
 ```sh
-cargo run --release -- models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775 'Say hi.' 4
+cargo run --release -- models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775 'Say hi.' 4 'Be brief.' uncached
 ```
 
-Actual bounded run on the recorded M1 Pro: prompt 19 tokens, emitted 4,
+T07 recorded the following bounded run on the M1 Pro (T10 adds the explicit
+`uncached` selection shown above): prompt 19 tokens, emitted 4,
 `Hello! How can`, OutputLimit; preparation/load 5.081 s and generation 25.138 s.
 This is a single demonstration, not a benchmark distribution or language quality
 qualification. Output is incomplete because of the explicitly requested limit.

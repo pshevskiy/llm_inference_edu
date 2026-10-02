@@ -28,6 +28,15 @@ fn main() {
             tokenizer.encode(case["text"].as_str().unwrap()).unwrap(),
             expected
         );
+        let mut stream = tokenizer.text_stream();
+        let mut streamed = String::new();
+        for &token in &expected {
+            if let Some(text) = stream.push(token).unwrap() {
+                streamed.push_str(&text);
+            }
+        }
+        assert_eq!(streamed, tokenizer.decode(&expected, true).unwrap());
+        assert_eq!(stream.pending_tokens(), 0);
         assert_eq!(
             tokenizer.decode(&expected, false).unwrap(),
             case["decoded"].as_str().unwrap()

@@ -720,7 +720,54 @@ Y = [[-2, 4], [-2, 13]]
   **Next:** T10, continued authorization; performance opt-in question pending
   for sustained T11–T16 tests, independent correctness work continues.
 
-- [ ] **T10 — Generation state and sampling.** Separate model stepping from sampler policy. Add deterministic greedy behavior, seeded temperature sampling, and one filtering strategy only when needed. Validate stop conditions, bad parameters, and non-finite logits. Preserve token IDs while decoding text without corrupted partial Unicode. Test cancellation and the sampled-but-not-yet-cached token case.
+- [x] **T10 — Generation state and sampling.** Separate model stepping from sampler policy. Add deterministic greedy behavior, seeded temperature sampling, and one filtering strategy only when needed. Validate stop conditions, bad parameters, and non-finite logits. Preserve token IDs while decoding text without corrupted partial Unicode. Test cancellation and the sampled-but-not-yet-cached token case.
+
+
+**T10 completion record — 2026-10-03**
+
+- **Status:** implemented; owner review pending. Astra found no actionable
+  findings in sampling/streaming/state and follow-up prefill-cancellation review.
+  Independently passed five state tests, two unit tests, fmt and Clippy.
+- **Files:** `src/sampling.rs`, `src/generation.rs`, `src/tokenizer.rs`,
+  `src/main.rs`, `src/lib.rs`, `tests/sampling.rs`, `tests/generation_state.rs`,
+  `examples/cached_generation.rs`, `examples/qwen_parity.rs`, Cargo manifest/lock,
+  `docs/lessons/10-state-sampling.md`, baseline lesson command, this record.
+- **Dependencies:** established rand 0.9.5/ChaCha8 rand_chacha 0.9.0 for seeded
+  policy; shared tokenizer dependencies avoid a duplicate RNG version. Rust
+  tokenizers 0.21.4 adds established context-aware stream decoding. Reference
+  Python remains pinned tokenizers 0.20.3; prior qualification rerun, not assumed.
+- **Commands/results:** `cargo fetch`, `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`,
+  `git diff --check` passed, 71 integration + 2 unit tests.
+  `cargo run --offline --release --example cached_generation` passed; greedy
+  `[41,53,41,50]`, seed-42 temperature 0.7/top-k 8 `[5,3,34,57]`.
+  `cargo build --offline --release`; actual real CLI
+  `target/release/llm_inference models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775 'Say hi.' 4`
+  passed, stdout `Hello! How can`, history 23/evaluated 22, OutputLimit,
+  load 4.556 s/generation 8.961 s. Single demonstration, no benchmark claim.
+  `cargo build --offline --release --example qwen_parity` and
+  `target/release/examples/qwen_parity models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed all prior independent reference gates, exact cached/chunk equality and
+  tokenization; added streaming Unicode/special-token equivalence. Local ignored
+  logs: `docs/evidence/t10-fetch.txt`, `t10-test.txt`, `t10-example.txt`,
+  `t10-output.txt`, `t10-timing.txt`, `t10-parity.txt`.
+- **Mechanism/trace:** admitted history and evaluated cache are distinct; resume
+  processes any pending prompt suffix/emitted token before sampling. Cooperative
+  atomic cancellation preserves valid prefixes and RNG state. Partial execution
+  failure keeps history but invalidates cache until reset. Greedy `[1,5,7]` →
+  first emit 41 leaves history4/processed3; fourth emission ends history7/processed6.
+- **Numerics/resources:** unchanged FP32 model; FP64 sampling mass only, labeled.
+  Partial top-k index selection, deterministic tie order, no full vocabulary sort
+  when k is smaller. Scratch/sampling buffers still allocate. Finite checks and
+  independent 3/4 two-class sampling test; no tolerance increase. Text decoder
+  withholds incomplete sequences and retains original IDs; trailing replacement
+  character can be deferred by upstream decoder, reported as pending. No truncation.
+- **Exercise:** determine history/processed/next position after prompt length 5
+  and three emissions, including cancellation semantics; unsolved in lesson 10.
+- **Limitations:** cancellation at token boundaries, no CLI signal handler;
+  top-k only, no tool-append policy or task quality guarantee. Same M1 Pro host;
+  no sustained/energy/iPhone/ANE checks. **Next:** T11 harness. Explicit opt-in
+  for sustained T11–T16 performance tests is requested and still pending.
 
 **Gate:** Correct cache reuse, no hidden truncation, and reproducible continuation. Restarting the model for every request or tool return fails this milestone.
 
