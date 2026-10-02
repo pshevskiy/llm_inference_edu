@@ -954,7 +954,46 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M5 — Understand quantization, then choose a representation
 
-- [ ] **T15 — Weight-only quantization experiment.** Start with one explicit groupwise symmetric INT8 teaching implementation and a documented group size/scale rule. Test rounding, clamping, all-zero groups, tails, and reconstructed-value error. Keep norms and other sensitive small tensors in FP32 initially. Use float activations and FP32 accumulation. Separate a dequantize-then-multiply reference from a fused dequantize-and-dot candidate; avoid a full FP32 weight reconstruction per token.
+- [x] **T15 — Weight-only quantization experiment.** Start with one explicit groupwise symmetric INT8 teaching implementation and a documented group size/scale rule. Test rounding, clamping, all-zero groups, tails, and reconstructed-value error. Keep norms and other sensitive small tensors in FP32 initially. Use float activations and FP32 accumulation. Separate a dequantize-then-multiply reference from a fused dequantize-and-dot candidate; avoid a full FP32 weight reconstruction per token.
+  **Primitive implemented 2026-10-03; owner review pending.** Added
+  `src/quantization.rs`, `tests/quantization.rs`, runnable `examples/int8.rs`,
+  lesson15 and library export. One explicit row-major groupwise symmetric INT8
+  teaching matrix with private validated fields; G32default, tested sizes1..256,
+  groups do not cross rows, tails explicit. Scale=maxabs/127FP32 (allzero scale1),
+  FP32quotient roundtiesaway thenclamp[-127,127]. Invalid/nonfinite/overflow
+  inputs and nonzero-underflow/reconstruction-overflow scales rejected. Checked
+  payload arithmetic before fallible allocation. Caller-owned dequantization
+  reference separated from fused scalar INT8 dot; weights reconstructed only in
+  registers per token, activations/accumulationFP32. No decoder quantization,
+  precision selection, unsafe, runtime dependency, full per-token reconstruction,
+  custom file format or INT4 scaffold. Norm/bias FP32 paths untouched.
+
+  **Checks:** fmt, offline Clippy warnings denied, offline tests passed
+  (88 integration +3 unit), `docs/evidence/t15-{fmt,clippy,test}.txt`.
+  Independent hand answers cover signed half rounding, clamps, zero groups,
+  row boundaries/tails; sizes1–896/multiple groups tested against FP64 equations,
+  a normal-scale half-scale +4epsilon*max reconstruction bound, exact fused versus
+  reconstructed scalar dots and unchanged operator tolerance. Invalid buffers,
+  zero dimensions, arithmetic overflow, nonfinite weights and scale underflow
+  tested; invalid output admission preserves caller contents. Positive subnormal
+  scales are admitted with coarse rounding/clamping: explicit weightbits190
+  regression yields scalebits1/q127/reconstructedbits127 (error63minimum-subnormal
+  units). The normal-scale reconstruction bound does not apply there.
+  A FP64-only quotient oracle initially expected63 where specified FP32 quotient
+  becomes63.5 and encodes64. Corrected independent oracle rounds the quotient
+  toFP32 before integer rounding; fixed-bit regression freezes this boundary.
+  Production/tolerances unchanged. Initial failure evidence retained in
+  `docs/evidence/t15-initial-reference-failure.txt`.
+  `cargo run --offline --example int8` passed fused/reference `[130,0]`, exact
+  expectedq/scales; encoded logical26bytes vs40FP32 (includes scales, not RSS
+  or file size). Evidence `docs/evidence/t15-example.txt`. No speedup/full-model
+  quality/resident memory result claimed; T16 remains the selection ticket.
+  Astra independently passed five integration tests, clamp unit and example with
+  no actionable code findings; its lesson review identified the subnormal-bound
+  limitation, now documented and regression-tested. Final review before commit.
+  Lesson15 includes execution order, trace and unsolved exercise.
+  **Next:** T16 freeze quality acceptance and evaluate representation.
+
 - [ ] **T16 — Quality/memory/latency decision.** Compare unquantized and quantized teacher-forced logits, held-out token loss, memory, and both prefill/decode. Decide whether INT8 earns a retained execution path. A subsequent INT4 experiment is a new authorized ticket only after these results; use one documented existing packing scheme or clearly label an internal experiment, not a new general model format.
 
 **Gate:** Lower file size is not reported as lower resident memory or faster inference without measurements. Freeze the quality acceptance rule before selecting the winning experiment. Core ML compression is a separate representation and must be qualified independently.

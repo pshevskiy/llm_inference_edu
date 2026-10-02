@@ -9,6 +9,7 @@ pub mod kernels;
 pub mod kv_cache;
 pub mod model;
 pub mod ops;
+pub mod quantization;
 pub mod rope;
 pub mod sampling;
 pub mod tokenizer;
