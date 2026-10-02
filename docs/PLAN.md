@@ -911,7 +911,44 @@ Y = [[-2, 4], [-2, 13]]
   **Next:** T14 prefill versus decode experiment; sustained model tests pending
   explicit opt-in, longer context remains unqualified.
 
-- [ ] **T14 — Prefill versus decode experiment.** Compare matrix-vector decode and chunked matrix-matrix prefill, varying the chunk size within the memory budget. An Accelerate/BLAS comparison may be a labeled development benchmark, not a replacement for the learning implementation. Record where data movement, arithmetic, or launch/setup cost appears to dominate.
+- [x] **T14 — Prefill versus decode experiment.** Compare matrix-vector decode and chunked matrix-matrix prefill, varying the chunk size within the memory budget. An Accelerate/BLAS comparison may be a labeled development benchmark, not a replacement for the learning implementation. Record where data movement, arithmetic, or launch/setup cost appears to dominate.
+  **Experiment completed 2026-10-03; owner review pending.** Compared independent
+  four-lane matrix-vector rows with explicit chunk1/2/4/8 projection prototype,
+  public FP32 Qwen rectangular shapes896→4864/4864→896/896→128 and
+  token counts1/4/8/16/32. Fixed128-byte stack partial sums; checked6GiB payload
+  admission before allocation, no transpose/BLAS/threads/unsafe/dependency.
+  Chunk outputs exactly match lane-order reference plus frozen independent FP64
+  gate. Added development-only `examples/{prefill_experiment.rs,
+  support/prefill_kernel.rs}`, `tests/chunked.rs`, lesson/experiment14 and README.
+
+  **Negative result:** reject production adoption. Final isolated release
+  experiment3warmups/10rotating-order samples per variant produced750 raw rows.
+  GateT32: independent28.542146 ms/chunk8 60.0068335 ms;
+  downT32:32.0667295/60.474479 ms. Chunk8 visits weights four times atT32 rather
+  than32, but is still slower. Stack accumulator/control overhead appears to
+  outweigh reuse benefit; logical pass counts are not DRAM measurements.
+  Recorded vector instructions support mechanism discussion without inventing
+  bandwidth/counter attribution. Source/compiler/workload/executable identity,
+  rawJSONL/distributions and completion record in ignored
+  `docs/evidence/t14-final/`; `t14-chunk-asm.txt`, `t14-final-run.txt`.
+  Earlier prototype run retained separately. Actual M1Pro16GB/macOS25G83/AC,
+  Rust1.90.0. No full-model, physical-memory, energy or sustained thermal claim.
+
+  **Checks:** fmt, offline Clippy warnings denied and offline tests passed
+  (82 integration +2 unit); `docs/evidence/t14-{fmt,clippy,test}.txt`.
+  Chunk tests cover all sizes1..8, input/token tails, independent answers, exact
+  arithmetic and invalid/overflow/length admission before writes. Production
+  files, model serial prefill and cache contracts remain unchanged fromT13.
+  Full cached matrix prefill is not implemented or claimed; longer model tests
+  remain unqualified. Sustained real tests still pending explicit opt-in.
+  Astra verified all15workloads/750rows and the negative decision. It found a
+  duplicate identity key that omitted RAM in the recorded artifact; corrected
+  `host_memory`/`memory_scope` keys in the recorder. Existing immutable identity
+  retained unchanged; same-host16GB evidence is inT11. No timing rerun after
+  this metadata-only correction. Final code review before commit. Lesson14
+  supplies trace and unsolved exercise.
+  **Next:** T15 groupwise symmetric INT8 teaching experiment.
+
 
 **Gate:** At least one reproducible optimization experiment, including a negative result when that is what measurements show. Keep an optimization only with evidence or a clear simplification benefit. No obligation to beat mature runtimes at this stage.
 

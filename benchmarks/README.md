@@ -69,3 +69,15 @@ target/release/examples/kernel_benchmark docs/evidence/NEW-kernels
 An immutable `identity.json` precedes samples; `completion.json` identifies a
 completed run. Inspect both. `docs/experiments/13-lanes.md` records the decision
 and limitations. Each kernel remains independently callable.
+
+T14 preserves a rejected, development-only chunked projection experiment:
+
+```sh
+cargo build --offline --release --example prefill_experiment
+target/release/examples/prefill_experiment docs/evidence/NEW-prefill
+```
+
+It rotates independent row calls and chunk1/2/4/8 on fifteen public numerical
+workloads. `docs/experiments/14-prefill.md` records the negative result. Production
+model prefill remains serial; projection timing does not certify cached batched
+prefill or sustained model throughput.
