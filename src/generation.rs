@@ -99,7 +99,8 @@ pub struct GenerationSession<'a> {
     cache: CachedSession<'a>,
     sampler: Sampler,
     history: Vec<usize>,
-    logits: Option<Vec<f32>>,
+    logits: Vec<f32>,
+    logits_ready: bool,
     stops: Vec<usize>,
     max_new: usize,
     generated: usize,
@@ -126,7 +127,8 @@ impl<'a> GenerationSession<'a> {
             cache: CachedSession::new(model, capacity).map_err(StateError::Cache)?,
             sampler,
             history: Vec::with_capacity(capacity),
-            logits: None,
+            logits: vec![0.0; vocab],
+            logits_ready: false,
             stops: stops.to_vec(),
             max_new,
             generated: 0,
@@ -172,8 +174,11 @@ impl<'a> GenerationSession<'a> {
                 return Err(StateError::Cancelled);
             }
             let token = self.history[self.cache.processed()];
-            self.logits = None;
-            self.logits = Some(self.cache.step(token).map_err(StateError::Cache)?);
+            self.logits_ready = false;
+            self.cache
+                .step_into(token, &mut self.logits)
+                .map_err(StateError::Cache)?;
+            self.logits_ready = true;
         }
         if cancel.load(Ordering::Relaxed) {
             return Err(StateError::Cancelled);
@@ -198,7 +203,7 @@ impl<'a> GenerationSession<'a> {
     pub fn reset(&mut self) {
         self.cache.reset();
         self.history.clear();
-        self.logits = None;
+        self.logits_ready = false;
         self.generated = 0;
         self.stop = None;
         self.sampler.reset();
@@ -220,13 +225,16 @@ impl<'a> GenerationSession<'a> {
             return Ok(None);
         }
         self.evaluate_pending(cancel)?;
+        if !self.logits_ready {
+            return Err(StateError::NotStarted);
+        }
         let next = self
             .sampler
-            .sample(self.logits.as_deref().ok_or(StateError::NotStarted)?)
+            .sample(&self.logits)
             .map_err(StateError::Sampling)?;
         self.history.push(next);
         self.generated += 1;
-        self.logits = None;
+        self.logits_ready = false;
         if self.stops.contains(&next) {
             self.stop = Some(StopReason::StopToken);
         } else if self.generated == self.max_new {
@@ -246,7 +254,8 @@ mod state_tests {
         // Exact reachable state at a cancellation boundary after first token:
         // the entire prompt is admitted, only its first token has been evaluated.
         state.history.extend_from_slice(&[1, 5, 7]);
-        state.logits = Some(state.cache.step(1).unwrap());
+        state.cache.step_into(1, &mut state.logits).unwrap();
+        state.logits_ready = true;
         let cancel = AtomicBool::new(true);
         assert!(matches!(
             state.next_token(&cancel),

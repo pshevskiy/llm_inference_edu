@@ -50,3 +50,10 @@ unavailable. Thermal commands may return error text despite success status;
 that is unavailable evidence, not a normal thermal reading. Metadata preserves
 these responses. Energy is unavailable without an instrument. No ANE, iPhone,
 GPU, external-runtime or sustained thermal claim follows from this CPU baseline.
+
+T12 adds `allocation_audit` as a development-only executable. See
+`docs/lessons/12-workspace.md`. Its allocator counters must remain outside latency
+measurements. Benchmarks now reuse the caller logits row and session workspace;
+metadata records resident workspace separately from the conservative scratch
+estimate (workspace plus up to two legacy caller rows). Historical T11 records
+retain their original allocation pattern and accounting.

@@ -115,17 +115,20 @@ pub fn run_sample(
     let mut first_visible_text_ns = None;
     let mut stopped_by_eos = false;
     session.reset();
+    let mut logits = vec![0.0; session.model_config().vocab_size];
     let request = Instant::now();
     let clock = Instant::now();
-    let mut logits = session
-        .prefill(&workload.prompt)
+    session
+        .prefill_into(&workload.prompt, &mut logits)
         .map_err(|e| format!("{e:?}"))?;
     let first_logits_ready_ns = request.elapsed().as_nanos();
     let prefill_ns = clock.elapsed().as_nanos();
     for &forced in &workload.fixed_output {
         if let Some(&previous) = emitted.last() {
             let clock = Instant::now();
-            logits = session.step(previous).map_err(|e| format!("{e:?}"))?;
+            session
+                .step_into(previous, &mut logits)
+                .map_err(|e| format!("{e:?}"))?;
             backend_decode_ns.push(clock.elapsed().as_nanos());
         }
         let clock = Instant::now();
@@ -170,7 +173,9 @@ pub fn run_sample(
     append.push(*emitted.last().unwrap());
     append.extend_from_slice(&workload.continuation);
     let clock = Instant::now();
-    logits = session.append(&append).map_err(|e| format!("{e:?}"))?;
+    session
+        .append_into(&append, &mut logits)
+        .map_err(|e| format!("{e:?}"))?;
     let continuation_backend_ns = clock.elapsed().as_nanos();
     let next = sampler.sample(&logits).map_err(|e| format!("{e:?}"))?;
     std::hint::black_box(next);
@@ -232,35 +237,15 @@ pub fn distribution(values: &[f64]) -> Result<Distribution, String> {
         median_absolute_deviation: median(&deviations),
     })
 }
-/// Conservative logical vector payload peak for current serial step plus the
-/// caller's previous row plus append's previous row during continuation.
-/// Allocator/tokenizer/OS overhead is separate.
+/// Reusable workspace plus up to two caller-owned vocabulary rows (legacy
+/// append can overlap the outer row). Allocator/tokenizer/OS overhead is separate.
 pub fn scratch_estimate(config: ModelConfig, capacity: usize) -> Result<usize, String> {
-    let h = config.hidden_dim;
-    let kv = config
-        .kv_heads
-        .checked_mul(config.head_dim)
-        .ok_or("overflow")?;
-    let attention = h
-        .checked_mul(6)
-        .and_then(|n| kv.checked_mul(3).and_then(|k| n.checked_add(k)))
-        .and_then(|n| capacity.checked_mul(2).and_then(|k| n.checked_add(k)))
-        .ok_or("overflow")?;
-    let ffn = h
-        .checked_mul(5)
-        .and_then(|n| config.ff_dim.checked_mul(3).and_then(|f| n.checked_add(f)))
-        .ok_or("overflow")?;
-    let retained = config.vocab_size.checked_mul(2).ok_or("overflow")?;
-    let attention = attention.checked_add(retained).ok_or("overflow")?;
-    let ffn = ffn.checked_add(retained).ok_or("overflow")?;
-    let logits = config
+    let workspace =
+        crate::kv_cache::workspace_bytes(config, capacity).map_err(|e| format!("{e:?}"))?;
+    config
         .vocab_size
-        .checked_mul(3)
-        .and_then(|n| h.checked_mul(2).and_then(|v| n.checked_add(v)))
-        .ok_or("overflow")?;
-    attention
-        .max(ffn)
-        .max(logits)
-        .checked_mul(size_of::<f32>())
+        .checked_mul(2)
+        .and_then(|n| n.checked_mul(size_of::<f32>()))
+        .and_then(|n| n.checked_add(workspace))
         .ok_or("overflow".into())
 }

@@ -820,7 +820,51 @@ Y = [[-2, 4], [-2, 13]]
   temporary file and rename to preserve identity on partial writes. Lesson 11 contains trace and unsolved exercise.
   **Next:** T12 allocation audit and reusable scratch, without kernel changes.
 
-- [ ] **T12 — Scratch reuse and allocation audit.** Use measured allocation profiles to remove redundant copies and per-step large allocations. Preallocate attention workspace to the admitted capacity. Keep diagnostic tracing out of timed paths. Test repeated generation/reset and failure cleanup.
+- [x] **T12 — Scratch reuse and allocation audit.** Use measured allocation profiles to remove redundant copies and per-step large allocations. Preallocate attention workspace to the admitted capacity. Keep diagnostic tracing out of timed paths. Test repeated generation/reset and failure cleanup.
+  **Implemented 2026-10-03; owner review pending.** Cached session now owns
+  explicit scratch reused across sequential layers/tokens. Checked cache+workspace
+  128 MiB admission precedes construction; attention rows reserve admitted capacity
+  and read only the active prefix. Context is cleared before accumulation. Added
+  `step_into`, `prefill_into`, `append_into` with caller-owned exact-width logits;
+  admission errors preserve output, execution failures invalidate cache and require
+  discarding output. Vec-returning convenience calls allocate one output row.
+  Generation keeps its logits row and readiness flag across resets; benchmark
+  uses buffered methods and records workspace separately. Scalar equations,
+  summation order, absolute positions, cancellation and numerical gates unchanged.
+  Changed `src/{kv_cache,generation,benchmark}.rs`, `examples/benchmark.rs`,
+  `tests/benchmark.rs`; added `tests/workspace.rs`, `examples/allocation_audit.rs`,
+  lesson 12, benchmark instructions. Added pinned development-only
+  `stats_alloc = 0.1.10` for measured Rust System allocator requests, not runtime
+  execution; no new unsafe code or toolchain. Its fetch/build was authorized.
+
+  **Measured allocation audit:** release `allocation_audit` before/after, tiny
+  and pinned Qwen directory. Tiny step 33 requests/4,256 cumulative bytes ->
+  legacy 1/256; Qwen step 363/2,655,104 -> legacy 1/607,744. Qwen three-token
+  prefill 1,089/7,965,312 -> legacy 1/607,744. Buffered step/prefill and greedy
+  next-token each measured **zero allocations/reallocations** on both models.
+  Workspace payload tiny capacity32 2,240 bytes, Qwen 88,832 bytes. Qwen cache
+  construction 49 requests/787,584 bytes -> 65/876,416: scratch moved to setup.
+  These are allocator traffic/payload observations, not RSS or latency claims.
+  Evidence: ignored `docs/evidence/t12-alloc-{before,after}-{tiny,qwen}.json`.
+
+  **Checks:** format, offline Clippy with warnings denied, offline tests passed
+  (77 integration + 2 unit). Evidence `docs/evidence/t12-{fmt,clippy,test}.txt`.
+  The isolated workspace test verifies exact cached/uncached logits at all eight
+  positions over four resets, zero allocation scopes, whole-chunk invalid-token
+  preflight, wrong output lengths, capacity errors, and forced partial overflow
+  followed by valid zero-token recovery after reset. Three repeated greedy
+  generations emit `[41,53,41,50]` with processed6/history7. Release real
+  `qwen_parity` passed all frozen reference/intermediate/logit/ID/cache checks;
+  evidence `docs/evidence/t12-parity.txt`. No numerical tolerances changed.
+  Tiny benchmark smoke passed, final nonoverlapping measurements preserved in
+  `docs/evidence/t12-tiny-isolated/`; preliminary concurrent tiny observations
+  retained separately and not used for comparisons. No pretrained latency
+  speedup claimed; sustained real repetitions/thermal/energy remain not run,
+  opt-in pending. Counter instrumentation excluded from latency harness.
+  Astra independently passed 22 targeted checks and found no actionable findings.
+  Lesson 12 explains execution order, trace and unsolved bounded exercise.
+  **Next:** T13 one measured projection-kernel experiment.
+
 - [ ] **T13 — One CPU-kernel improvement.** Select one expensive operation from the profile. First investigate loop ordering/blocking and compiler output; then one explicit vectorized or threaded implementation where justified. Keep a callable scalar reference. Benchmark realistic model shapes, not only convenient square matrices. Do not add both threading and SIMD in one unexplained change.
 - [ ] **T14 — Prefill versus decode experiment.** Compare matrix-vector decode and chunked matrix-matrix prefill, varying the chunk size within the memory budget. An Accelerate/BLAS comparison may be a labeled development benchmark, not a replacement for the learning implementation. Record where data movement, arithmetic, or launch/setup cost appears to dominate.
 

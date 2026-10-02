@@ -89,9 +89,9 @@ fn diagnostic_scopes_preserve_exact_logits_and_state() {
 fn memory_estimate_is_distinct_checked_vector_payload() {
     let model = model();
     assert_eq!(model.logical_weight_bytes().unwrap(), 82560);
-    // Two retained logits rows during append: 2*64=128 elements.
-    // Attention 304+128=432; FFN 352+128=480; logits 3*64+2*32=256.
-    assert_eq!(scratch_estimate(model.config(), 32).unwrap(), 480 * 4);
+    // Reusable workspace: 8*32+3*16+3*64+2*32=560 elements.
+    // Conservative caller rows: 2*64=128 elements.
+    assert_eq!(scratch_estimate(model.config(), 32).unwrap(), 688 * 4);
     let mut c = model.config();
     c.hidden_dim = usize::MAX;
     assert!(scratch_estimate(c, 32).is_err());

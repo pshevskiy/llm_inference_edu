@@ -214,8 +214,8 @@ fn run() -> Result<(), String> {
         "model":identity,"model_config":model.config(),"compute_dtype":"FP32","quantization":"none","numerical_threads":1,
         "workload":workload,"workload_file_sha256":digest(&bytes),"prompt_ids_u64le_sha256":digest(&ids_bytes),"model_file_bytes":model_file_bytes,
         "model_load_ns":load_ns,"load_scope":if args[0]=="tiny"{"JSON parse/decoder validation; file read before timer"}else{"verified file read/hash/BF16 expansion/decoder validation; tokenizer excluded"},"filesystem_cache_state":"not controlled; one initial load, not a certified cold load","download_conversion_compilation":"separate preparation; not included or measured in this harness",
-        "logical_weight_bytes":weights,"logical_cache_bytes":kv,"logical_scratch_peak_estimate_bytes":scratch,"tokenizer_allowance_bytes":tokenizer_allowance,"admission_estimate_bytes":admission,
-        "memory_estimate_scope":"FP32 payload + KV + current serial vector peak with two retained logits rows + reserved parser/metadata allowance; not resident memory",
+        "logical_weight_bytes":weights,"logical_cache_bytes":kv,"logical_workspace_allocated_bytes":session.workspace_bytes(),"logical_scratch_peak_estimate_bytes":scratch,"tokenizer_allowance_bytes":tokenizer_allowance,"admission_estimate_bytes":admission,
+        "memory_estimate_scope":"FP32 payload + KV + resident reusable workspace plus up to two caller logits rows + reserved parser/metadata allowance; not resident memory",
         "rss_snapshot_before_bytes":rss_before,"rss_snapshot_after_bytes":null,"rss_scope":"point snapshots, not process peak; use documented /usr/bin/time -l separately",
         "energy":"unavailable; no instrument","ui_delivery":"not measured","first_visible_text_scope":"complete decoder chunk ready, no rendering/printing",
         "single_sample":single,"timestamp_utc":command("date",&["-u","+%Y-%m-%dT%H:%M:%SZ"])});
