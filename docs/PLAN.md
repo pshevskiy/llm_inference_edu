@@ -611,7 +611,39 @@ Y = [[-2, 4], [-2, 13]]
   claim. Tools/template extensions deferred. Owner understanding pending.
   **Next:** T07, authorized continuation with a bounded uncached CLI.
 
-- [ ] **T07 — Uncached generation CLI.** Implement a simple greedy loop that recomputes the prefix as a correctness baseline. Respect configured stop tokens and output/context limits. Print timing separately from generated text. Generate a short answer from the real checkpoint; document that uncached execution is intentionally inefficient.
+- [x] **T07 — Uncached generation CLI.** Implement a simple greedy loop that recomputes the prefix as a correctness baseline. Respect configured stop tokens and output/context limits. Print timing separately from generated text. Generate a short answer from the real checkpoint; document that uncached execution is intentionally inefficient.
+
+
+**T07 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. Astra found no actionable
+  findings; independently passed three generation tests, fmt, Clippy and
+  reproduced the tiny greedy IDs using the independent NumPy decoder.
+- **Files:** `src/generation.rs`, `src/main.rs`, `src/lib.rs`,
+  `tests/generation.rs`, `docs/lessons/07-generation.md`, this record.
+  No new dependencies.
+- **Commands/results:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`,
+  `git diff --check` passed; 53 integration tests (3 new).
+  `cargo build --offline --release` and
+  `target/release/llm_inference models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775 'Say hi.' 4`
+  passed. Real CPU FP32 prompt 19 tokens, emitted 4, OutputLimit;
+  stdout `Hello! How can`, preparation/load 5.081 s, generation 25.138 s.
+  Local ignored evidence: `docs/evidence/t07-test.txt`, `t07-output.txt`,
+  `t07-timing.txt`. Single bounded demonstration, not a benchmark distribution.
+- **Mechanism/trace:** preflight exact total capacity (32), recompute full history,
+  choose largest finite last-row logit with lowest-ID ties, append, check stop.
+  Qwen configured stop IDs are honored; explicit greedy policy. Synthetic
+  `[1,5,7]` emits `[41,53,41,50]`; stop ID 41 ends after one emitted token.
+- **Mechanical sympathy:** immutable tied weights, contiguous feature loops,
+  one history allocation; repeated prefix/weight work and per-forward scratch
+  retained as baseline costs. Text output separate from timing; decode once
+  after generation to preserve Unicode. No optimized throughput claim.
+- **Exercise:** distinguish current history from positions in the latest forward
+  after the second emission; unsolved in lesson 07.
+- **Limitations:** output bounded/incomplete; no streaming, cache, sampling,
+  large-context, ANE, language-quality or mobile qualification. Same Mac host.
+  **Next:** T08, under the explicit continued-roadmap authorization.
 
 **Gate:** A real model runs through our Rust mathematics, and its behavior is validated against a pinned independent implementation. A model's advertised maximum context does not become our validated capacity.
 
