@@ -1,8 +1,10 @@
 //! Transparent causal grouped-query attention. One score row is reused across heads.
 
+use crate::LinearError;
+use crate::matrix::{MatrixRef, ProjectionError};
 use crate::ops::{OpError, softmax};
+use crate::quantization::QuantError;
 use crate::rope::{RopeError, rope};
-use crate::{LinearError, linear};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AttentionConfig {
@@ -16,10 +18,10 @@ pub struct AttentionConfig {
 /// All projection matrices are `[output,input]` row-major; optional biases are `[output]`.
 #[derive(Clone, Copy)]
 pub struct AttentionWeights<'a> {
-    pub query: &'a [f32],
-    pub key: &'a [f32],
-    pub value: &'a [f32],
-    pub output: &'a [f32],
+    pub query: MatrixRef<'a>,
+    pub key: MatrixRef<'a>,
+    pub value: MatrixRef<'a>,
+    pub output: MatrixRef<'a>,
     pub query_bias: Option<&'a [f32]>,
     pub key_bias: Option<&'a [f32]>,
     pub value_bias: Option<&'a [f32]>,
@@ -54,10 +56,19 @@ pub enum AttentionError {
         index: usize,
     },
     Linear(LinearError),
+    Quantized(QuantError),
     Rotary(RopeError),
     Probability(OpError),
 }
 
+impl From<ProjectionError> for AttentionError {
+    fn from(e: ProjectionError) -> Self {
+        match e {
+            ProjectionError::Float(e) => Self::Linear(e),
+            ProjectionError::Quantized(e) => Self::Quantized(e),
+        }
+    }
+}
 fn finite(buffer: &'static str, x: &[f32]) -> Result<(), AttentionError> {
     for (index, value) in x.iter().enumerate() {
         if !value.is_finite() {
@@ -118,21 +129,31 @@ pub fn causal_attention(
         .and_then(|n| tokens.checked_mul(2).and_then(|s| n.checked_add(s)))
         .and_then(|n| n.checked_mul(size_of::<f32>()))
         .ok_or(AttentionError::DimensionOverflow)?;
-    for (buffer, values, expected) in [
-        ("x", x, q_len),
-        ("query_weight", weights.query, q_weights),
-        ("key_weight", weights.key, kv_weights),
-        ("value_weight", weights.value, kv_weights),
-        ("output_weight", weights.output, q_weights),
+    if x.len() != q_len {
+        return Err(AttentionError::InvalidLength {
+            buffer: "x",
+            expected: q_len,
+            actual: x.len(),
+        });
+    }
+    finite("x", x)?;
+    for (buffer, m, rows, len) in [
+        ("query_weight", weights.query, h, q_weights),
+        ("key_weight", weights.key, kv_width, kv_weights),
+        ("value_weight", weights.value, kv_width, kv_weights),
+        ("output_weight", weights.output, h, q_weights),
     ] {
-        if values.len() != expected {
+        if m.len() != len {
             return Err(AttentionError::InvalidLength {
                 buffer,
-                expected,
-                actual: values.len(),
+                expected: len,
+                actual: m.len(),
             });
         }
-        finite(buffer, values)?;
+        m.check_shape(rows, h).map_err(AttentionError::Quantized)?;
+        if let Some(index) = m.nonfinite_index() {
+            return Err(AttentionError::NonFinite { buffer, index });
+        }
     }
 
     for (buffer, bias, expected) in [
@@ -155,9 +176,18 @@ pub fn causal_attention(
     let mut query = vec![0.0; q_len];
     let mut key = vec![0.0; kv_len];
     let mut value = vec![0.0; kv_len];
-    linear(x, weights.query, &mut query, tokens, h, h).map_err(AttentionError::Linear)?;
-    linear(x, weights.key, &mut key, tokens, h, kv_width).map_err(AttentionError::Linear)?;
-    linear(x, weights.value, &mut value, tokens, h, kv_width).map_err(AttentionError::Linear)?;
+    weights
+        .query
+        .project(x, &mut query, tokens, h, h, false)
+        .map_err(AttentionError::from)?;
+    weights
+        .key
+        .project(x, &mut key, tokens, h, kv_width, false)
+        .map_err(AttentionError::from)?;
+    weights
+        .value
+        .project(x, &mut value, tokens, h, kv_width, false)
+        .map_err(AttentionError::from)?;
     for (projected, bias, width) in [
         (&mut query, weights.query_bias, h),
         (&mut key, weights.key_bias, kv_width),
@@ -229,7 +259,10 @@ pub fn causal_attention(
     }
     finite("context", &context)?;
     let mut output = vec![0.0; q_len];
-    linear(&context, weights.output, &mut output, tokens, h, h).map_err(AttentionError::Linear)?;
+    weights
+        .output
+        .project(&context, &mut output, tokens, h, h, false)
+        .map_err(AttentionError::from)?;
     finite("output", &output)?;
     Ok(AttentionTrace {
         query,

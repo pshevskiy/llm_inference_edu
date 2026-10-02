@@ -1,11 +1,12 @@
 //! One concrete pre-normalized decoder: GQA/RoPE, residuals, RMSNorm and SwiGLU.
 
+use crate::LinearError;
 use crate::attention::{
     AttentionConfig, AttentionError, AttentionTrace, AttentionWeights, causal_attention,
 };
-use crate::kernels::linear_lanes4;
-use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu};
-use crate::{LinearError, linear};
+use crate::matrix::{ProjectionError, WeightMatrix};
+use crate::ops::{OpError, residual_add, rmsnorm, silu};
+use crate::quantization::QuantError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -27,10 +28,10 @@ pub struct ModelConfig {
 #[serde(deny_unknown_fields)]
 pub struct LayerWeights {
     pub attention_norm: Vec<f32>,
-    pub query: Vec<f32>,
-    pub key: Vec<f32>,
-    pub value: Vec<f32>,
-    pub attention_output: Vec<f32>,
+    pub query: WeightMatrix,
+    pub key: WeightMatrix,
+    pub value: WeightMatrix,
+    pub attention_output: WeightMatrix,
     #[serde(default)]
     pub query_bias: Option<Vec<f32>>,
     #[serde(default)]
@@ -38,15 +39,15 @@ pub struct LayerWeights {
     #[serde(default)]
     pub value_bias: Option<Vec<f32>>,
     pub ffn_norm: Vec<f32>,
-    pub gate: Vec<f32>,
-    pub up: Vec<f32>,
-    pub down: Vec<f32>,
+    pub gate: WeightMatrix,
+    pub up: WeightMatrix,
+    pub down: WeightMatrix,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelWeights {
-    pub embedding: Vec<f32>,
+    pub embedding: WeightMatrix,
     pub layers: Vec<LayerWeights>,
     pub final_norm: Vec<f32>,
 }
@@ -114,8 +115,41 @@ pub enum ModelError {
     Operation(OpError),
     Attention(AttentionError),
     Linear(LinearError),
+    Quantized(QuantError),
 }
 
+impl From<ProjectionError> for ModelError {
+    fn from(e: ProjectionError) -> Self {
+        match e {
+            ProjectionError::Float(e) => Self::Linear(e),
+            ProjectionError::Quantized(e) => Self::Quantized(e),
+        }
+    }
+}
+fn matrix_weight(
+    buffer: &'static str,
+    layer: Option<usize>,
+    m: &WeightMatrix,
+    rows: usize,
+    width: usize,
+) -> Result<(), ModelError> {
+    let expected = product(rows, width)?;
+    if m.len() != expected {
+        return Err(ModelError::InvalidLength {
+            buffer,
+            layer,
+            expected,
+            actual: m.len(),
+        });
+    }
+    if !m.view().matches_shape(rows, width) {
+        return Err(ModelError::InvalidConfig("matrix shape"));
+    }
+    if let Some(index) = m.view().nonfinite_index() {
+        return Err(ModelError::NonFinite { buffer, index });
+    }
+    Ok(())
+}
 fn product(a: usize, b: usize) -> Result<usize, ModelError> {
     a.checked_mul(b).ok_or(ModelError::DimensionOverflow)
 }
@@ -189,35 +223,41 @@ impl Decoder {
             return Err(ModelError::InvalidConfig("FP32 position limit"));
         }
         let kv = product(c.kv_heads, c.head_dim)?;
-        let square = product(c.hidden_dim, c.hidden_dim)?;
-        let kv_weights = product(kv, c.hidden_dim)?;
-        let ff_weights = product(c.ff_dim, c.hidden_dim)?;
+        product(c.hidden_dim, c.hidden_dim)?;
+        product(kv, c.hidden_dim)?;
+        product(c.ff_dim, c.hidden_dim)?;
         // Validate configured activation counts, not only weight dimensions.
         product(product(c.max_tokens, c.hidden_dim)?, size_of::<f32>())?;
         product(product(c.max_tokens, c.ff_dim)?, size_of::<f32>())?;
         if weights.layers.len() != c.layers {
             return Err(ModelError::InvalidLayerCount);
         }
-        weight(
+        matrix_weight(
             "embedding",
             None,
             &weights.embedding,
-            product(c.vocab_size, c.hidden_dim)?,
+            c.vocab_size,
+            c.hidden_dim,
         )?;
         weight("final_norm", None, &weights.final_norm, c.hidden_dim)?;
         for (i, l) in weights.layers.iter().enumerate() {
-            for (name, values, len) in [
-                ("attention_norm", &l.attention_norm, c.hidden_dim),
-                ("query", &l.query, square),
-                ("key", &l.key, kv_weights),
-                ("value", &l.value, kv_weights),
-                ("attention_output", &l.attention_output, square),
-                ("ffn_norm", &l.ffn_norm, c.hidden_dim),
-                ("gate", &l.gate, ff_weights),
-                ("up", &l.up, ff_weights),
-                ("down", &l.down, ff_weights),
+            weight("attention_norm", Some(i), &l.attention_norm, c.hidden_dim)?;
+            weight("ffn_norm", Some(i), &l.ffn_norm, c.hidden_dim)?;
+            for (name, m, rows, width) in [
+                ("query", &l.query, c.hidden_dim, c.hidden_dim),
+                ("key", &l.key, kv, c.hidden_dim),
+                ("value", &l.value, kv, c.hidden_dim),
+                (
+                    "attention_output",
+                    &l.attention_output,
+                    c.hidden_dim,
+                    c.hidden_dim,
+                ),
+                ("gate", &l.gate, c.ff_dim, c.hidden_dim),
+                ("up", &l.up, c.ff_dim, c.hidden_dim),
+                ("down", &l.down, c.hidden_dim, c.ff_dim),
             ] {
-                weight(name, Some(i), values, len)?;
+                matrix_weight(name, Some(i), m, rows, width)?;
             }
             for (name, values, len) in [
                 ("query_bias", &l.query_bias, c.hidden_dim),
@@ -258,17 +298,17 @@ impl Decoder {
             let p = format!("model.layers.{i}");
             layers.push(LayerWeights {
                 attention_norm: take(&format!("{p}.input_layernorm.weight"))?,
-                query: take(&format!("{p}.self_attn.q_proj.weight"))?,
-                key: take(&format!("{p}.self_attn.k_proj.weight"))?,
-                value: take(&format!("{p}.self_attn.v_proj.weight"))?,
+                query: take(&format!("{p}.self_attn.q_proj.weight"))?.into(),
+                key: take(&format!("{p}.self_attn.k_proj.weight"))?.into(),
+                value: take(&format!("{p}.self_attn.v_proj.weight"))?.into(),
                 query_bias: Some(take(&format!("{p}.self_attn.q_proj.bias"))?),
                 key_bias: Some(take(&format!("{p}.self_attn.k_proj.bias"))?),
                 value_bias: Some(take(&format!("{p}.self_attn.v_proj.bias"))?),
-                attention_output: take(&format!("{p}.self_attn.o_proj.weight"))?,
+                attention_output: take(&format!("{p}.self_attn.o_proj.weight"))?.into(),
                 ffn_norm: take(&format!("{p}.post_attention_layernorm.weight"))?,
-                gate: take(&format!("{p}.mlp.gate_proj.weight"))?,
-                up: take(&format!("{p}.mlp.up_proj.weight"))?,
-                down: take(&format!("{p}.mlp.down_proj.weight"))?,
+                gate: take(&format!("{p}.mlp.gate_proj.weight"))?.into(),
+                up: take(&format!("{p}.mlp.up_proj.weight"))?.into(),
+                down: take(&format!("{p}.mlp.down_proj.weight"))?.into(),
             });
         }
         if let Some(name) = tensors.keys().next() {
@@ -290,7 +330,7 @@ impl Decoder {
                 norm_epsilon: c.rms_norm_eps,
             },
             ModelWeights {
-                embedding,
+                embedding: embedding.into(),
                 layers,
                 final_norm,
             },
@@ -301,42 +341,97 @@ impl Decoder {
         self.config
     }
 
-    /// Logical FP32 payload only: allocator overhead and resident pages differ.
+    /// Logical stored payload (FP32 or INT8 values+scales), not resident pages.
     pub fn logical_weight_bytes(&self) -> Result<usize, ModelError> {
-        let mut elements = self
+        let mut bytes = self
             .weights
             .embedding
-            .len()
-            .checked_add(self.weights.final_norm.len())
+            .logical_bytes()
             .ok_or(ModelError::DimensionOverflow)?;
-        for layer in &self.weights.layers {
-            for values in [
-                &layer.attention_norm,
-                &layer.query,
-                &layer.key,
-                &layer.value,
-                &layer.attention_output,
-                &layer.ffn_norm,
-                &layer.gate,
-                &layer.up,
-                &layer.down,
+        bytes = bytes
+            .checked_add(product(self.weights.final_norm.len(), 4)?)
+            .ok_or(ModelError::DimensionOverflow)?;
+        for l in &self.weights.layers {
+            for m in [
+                &l.query,
+                &l.key,
+                &l.value,
+                &l.attention_output,
+                &l.gate,
+                &l.up,
+                &l.down,
             ] {
-                elements = elements
-                    .checked_add(values.len())
+                bytes = bytes
+                    .checked_add(m.logical_bytes().ok_or(ModelError::DimensionOverflow)?)
                     .ok_or(ModelError::DimensionOverflow)?;
             }
-            for values in [&layer.query_bias, &layer.key_bias, &layer.value_bias]
-                .into_iter()
-                .flatten()
-            {
-                elements = elements
-                    .checked_add(values.len())
+            for v in [&l.attention_norm, &l.ffn_norm].into_iter().chain(
+                [&l.query_bias, &l.key_bias, &l.value_bias]
+                    .into_iter()
+                    .flatten(),
+            ) {
+                bytes = bytes
+                    .checked_add(product(v.len(), 4)?)
                     .ok_or(ModelError::DimensionOverflow)?;
             }
         }
-        product(elements, size_of::<f32>())
+        Ok(bytes)
     }
-
+    /// Development-only reproduction of the rejected T16 INT8 model experiment.
+    /// Consumes this model; cache borrows prevent conversion of a live session.
+    /// Only matrix weights change; norms/biases stay FP32. Failure exposes no
+    /// partially converted model. Default constructors always remain FP32.
+    #[cfg(feature = "int8-experiment")]
+    pub fn into_int8(self, group: usize) -> Result<Self, ModelError> {
+        if !(1..=256).contains(&group) {
+            return Err(ModelError::Quantized(QuantError::InvalidGroupSize));
+        }
+        self.convert_matrices(Some(group))
+    }
+    /// Once-dequantized independent execution reference; never called per token.
+    #[cfg(feature = "int8-experiment")]
+    pub fn into_dequantized_reference(self) -> Result<Self, ModelError> {
+        self.convert_matrices(None)
+    }
+    #[cfg(feature = "int8-experiment")]
+    fn convert_matrices(mut self, group: Option<usize>) -> Result<Self, ModelError> {
+        let c = self.config;
+        let kv = product(c.kv_heads, c.head_dim)?;
+        fn convert(
+            m: &mut WeightMatrix,
+            rows: usize,
+            width: usize,
+            group: Option<usize>,
+        ) -> Result<(), ModelError> {
+            let previous = std::mem::replace(m, WeightMatrix::Float(Vec::new()));
+            *m = match group {
+                Some(g) => previous.into_int8(rows, width, g),
+                None => previous.into_float(),
+            }
+            .map_err(ModelError::Quantized)?;
+            Ok(())
+        }
+        convert(
+            &mut self.weights.embedding,
+            c.vocab_size,
+            c.hidden_dim,
+            group,
+        )?;
+        for l in &mut self.weights.layers {
+            for (m, rows, width) in [
+                (&mut l.query, c.hidden_dim, c.hidden_dim),
+                (&mut l.key, kv, c.hidden_dim),
+                (&mut l.value, kv, c.hidden_dim),
+                (&mut l.attention_output, c.hidden_dim, c.hidden_dim),
+                (&mut l.gate, c.ff_dim, c.hidden_dim),
+                (&mut l.up, c.ff_dim, c.hidden_dim),
+                (&mut l.down, c.hidden_dim, c.ff_dim),
+            ] {
+                convert(m, rows, width, group)?;
+            }
+        }
+        Self::new(c, self.weights)
+    }
     /// Full-prefix scalar forward. `inspect=true` retains named activations and
     /// all-position logits, limited to 32 tokens. Normal mode returns only last
     /// logits and drops each layer's temporary buffers before the next layer.
@@ -354,14 +449,11 @@ impl Decoder {
         let len = product(t, h)?;
         let ff_len = product(t, c.ff_dim)?;
         let mut hidden = vec![0.0; len];
-        embedding(
-            token_ids,
-            &self.weights.embedding,
-            &mut hidden,
-            c.vocab_size,
-            h,
-        )
-        .map_err(ModelError::Operation)?;
+        self.weights
+            .embedding
+            .view()
+            .gather(token_ids, &mut hidden, c.vocab_size, h)
+            .map_err(ModelError::Operation)?;
         let traced_embedding = if inspect { Some(hidden.clone()) } else { None };
         let mut traces = Vec::new();
         for l in &self.weights.layers {
@@ -378,10 +470,10 @@ impl Decoder {
             let attention = causal_attention(
                 &attention_norm,
                 AttentionWeights {
-                    query: &l.query,
-                    key: &l.key,
-                    value: &l.value,
-                    output: &l.attention_output,
+                    query: (&l.query).into(),
+                    key: (&l.key).into(),
+                    value: (&l.value).into(),
+                    output: (&l.attention_output).into(),
                     query_bias: l.query_bias.as_deref(),
                     key_bias: l.key_bias.as_deref(),
                     value_bias: l.value_bias.as_deref(),
@@ -412,8 +504,13 @@ impl Decoder {
             .map_err(ModelError::Operation)?;
             let mut gate = vec![0.0; ff_len];
             let mut up = vec![0.0; ff_len];
-            linear(&ffn_norm, &l.gate, &mut gate, t, h, c.ff_dim).map_err(ModelError::Linear)?;
-            linear(&ffn_norm, &l.up, &mut up, t, h, c.ff_dim).map_err(ModelError::Linear)?;
+            l.gate
+                .view()
+                .project(&ffn_norm, &mut gate, t, h, c.ff_dim, false)
+                .map_err(ModelError::from)?;
+            l.up.view()
+                .project(&ffn_norm, &mut up, t, h, c.ff_dim, false)
+                .map_err(ModelError::from)?;
             let mut activated_gate = vec![0.0; ff_len];
             silu(&gate, &mut activated_gate).map_err(ModelError::Operation)?;
             let mut product_values = vec![0.0; ff_len];
@@ -422,8 +519,10 @@ impl Decoder {
             }
             finite("SwiGLU product", &product_values)?;
             let mut ffn_output = vec![0.0; len];
-            linear(&product_values, &l.down, &mut ffn_output, t, c.ff_dim, h)
-                .map_err(ModelError::Linear)?;
+            l.down
+                .view()
+                .project(&product_values, &mut ffn_output, t, c.ff_dim, h, false)
+                .map_err(ModelError::from)?;
             let mut next = vec![0.0; len];
             residual_add(&after_attention, &ffn_output, &mut next)
                 .map_err(ModelError::Operation)?;
@@ -457,15 +556,11 @@ impl Decoder {
         let mut logits = vec![0.0; c.vocab_size];
         let trace = if inspect {
             let mut all_logits = vec![0.0; product(t, c.vocab_size)?];
-            linear_lanes4(
-                &final_norm,
-                &self.weights.embedding,
-                &mut all_logits,
-                t,
-                h,
-                c.vocab_size,
-            )
-            .map_err(ModelError::Linear)?;
+            self.weights
+                .embedding
+                .view()
+                .project(&final_norm, &mut all_logits, t, h, c.vocab_size, true)
+                .map_err(ModelError::from)?;
             finite("logits", &all_logits)?;
             logits.copy_from_slice(&all_logits[(t - 1) * c.vocab_size..]);
             Some(DecoderTrace {
@@ -475,15 +570,18 @@ impl Decoder {
                 logits: all_logits,
             })
         } else {
-            linear_lanes4(
-                &final_norm[(t - 1) * h..],
-                &self.weights.embedding,
-                &mut logits,
-                1,
-                h,
-                c.vocab_size,
-            )
-            .map_err(ModelError::Linear)?;
+            self.weights
+                .embedding
+                .view()
+                .project(
+                    &final_norm[(t - 1) * h..],
+                    &mut logits,
+                    1,
+                    h,
+                    c.vocab_size,
+                    true,
+                )
+                .map_err(ModelError::from)?;
             finite("logits", &logits)?;
             None
         };

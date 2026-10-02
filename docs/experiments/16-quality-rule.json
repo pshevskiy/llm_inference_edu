@@ -1,0 +1,22 @@
+{
+  "status": "frozen before candidate model measurements; owner review pending",
+  "group_size": 32,
+  "small_tensors": "normalization weights and Q/K/V biases remain FP32",
+  "compute": "FP32 activations/accumulation; original scalar reference retained",
+  "held_out_public_text": [
+    "Water freezes at zero degrees Celsius.",
+    "The capital of France is Paris.",
+    "A triangle has three sides."
+  ],
+  "capacity": 32,
+  "quality_scope": "short teacher-forced smoke qualification, not broad language/task quality",
+  "numerical_reference": "fused INT8 model must agree with once-dequantized FP32 reference at unchanged operator/model gates; token/cache invariants exact",
+  "maximum_mean_held_out_loss_increase_nats": 0.05,
+  "maximum_mean_kl_fp32_to_int8_nats": 0.01,
+  "minimum_teacher_forced_greedy_agreement": 0.9,
+  "maximum_absolute_logit_change": 0.5,
+  "maximum_encoded_logical_weight_ratio": 0.4,
+  "performance_rule": "no claimed speedup or default precision switch without repeated comparable model evidence; single prefill/decode observations are diagnostic only",
+  "memory_rule": "compare logical payload and physical post-load RSS/peak separately; unchanged BF16 input file and FP32 loading peak must be disclosed",
+  "default_policy": "FP32 remains default; experimental opt-in INT8 may be retained only if numerical/quality/memory gates pass, with performance qualification status explicit"
+}

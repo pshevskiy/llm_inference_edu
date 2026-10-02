@@ -86,22 +86,22 @@ fn buffered_decode_allocation_admission_reset_and_failure_contracts() {
     };
     let layer = LayerWeights {
         attention_norm: vec![1.; 2],
-        query: vec![0.; 4],
-        key: vec![0.; 4],
-        value: vec![1., 0., 0., 1.],
-        attention_output: vec![0.; 4],
+        query: (vec![0.; 4]).into(),
+        key: (vec![0.; 4]).into(),
+        value: (vec![1., 0., 0., 1.]).into(),
+        attention_output: (vec![0.; 4]).into(),
         query_bias: None,
         key_bias: None,
         value_bias: None,
         ffn_norm: vec![1.; 2],
-        gate: vec![1.; 4],
-        up: vec![1.; 4],
-        down: vec![f32::MAX; 4],
+        gate: (vec![1.; 4]).into(),
+        up: (vec![1.; 4]).into(),
+        down: (vec![f32::MAX; 4]).into(),
     };
     let fragile = Decoder::new(
         config,
         ModelWeights {
-            embedding: vec![0., 0., 1., 1.],
+            embedding: (vec![0., 0., 1., 1.]).into(),
             layers: vec![layer],
             final_norm: vec![1.; 2],
         },
@@ -126,4 +126,17 @@ fn buffered_decode_allocation_admission_reset_and_failure_contracts() {
     assert_eq!(out, [0.; 2]);
     assert!(cache.is_valid());
     assert_eq!(cache.processed(), 1);
+    #[cfg(feature = "int8-experiment")]
+    {
+        // Quantized weights must also stay compressed throughout buffered decode.
+        let quantized = model.into_int8(32).unwrap();
+        let mut cache = CachedSession::new(&quantized, 8).unwrap();
+        for _ in 0..3 {
+            no_allocations(|| cache.reset());
+            for (p, &id) in ids.iter().enumerate() {
+                no_allocations(|| cache.step_into(id, &mut logits).unwrap());
+                assert_eq!(logits, quantized.forward(&ids[..=p], false).unwrap().logits);
+            }
+        }
+    }
 }

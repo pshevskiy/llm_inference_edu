@@ -6,6 +6,12 @@
 pub enum OpError {
     ZeroDimension,
     DimensionOverflow,
+    InvalidShape {
+        expected_rows: usize,
+        expected_width: usize,
+        actual_rows: usize,
+        actual_width: usize,
+    },
     InvalidLength {
         buffer: &'static str,
         expected: usize,

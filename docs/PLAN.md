@@ -994,7 +994,64 @@ Y = [[-2, 4], [-2, 13]]
   Lesson15 includes execution order, trace and unsolved exercise.
   **Next:** T16 freeze quality acceptance and evaluate representation.
 
-- [ ] **T16 — Quality/memory/latency decision.** Compare unquantized and quantized teacher-forced logits, held-out token loss, memory, and both prefill/decode. Decide whether INT8 earns a retained execution path. A subsequent INT4 experiment is a new authorized ticket only after these results; use one documented existing packing scheme or clearly label an internal experiment, not a new general model format.
+- [x] **T16 — Quality/memory/latency decision.** Compare unquantized and quantized teacher-forced logits, held-out token loss, memory, and both prefill/decode. Decide whether INT8 earns a retained execution path. A subsequent INT4 experiment is a new authorized ticket only after these results; use one documented existing packing scheme or clearly label an internal experiment, not a new general model format.
+
+  **Experiment completed 2026-10-03; pretrained INT8 rejected; owner review pending.**
+  Frozen acceptance rule `docs/experiments/16-quality-rule.json` written before
+  candidate measurements; SHA256 54af181480ce8e0c53b4c66b3376912d17372ab9a8766ef4d1d886e23adb3a35. No thresholds changed after results.
+  Shared decoder/cache now use concrete weight matrices. The whole-model INT8
+  reproduction is behind nondefault `int8-experiment`; default builds cannot
+  construct INT8 decoder weights, CLI has no precision switch. Standalone T15
+  primitives remain available. No selected/qualified optional INT8 model path.
+  Consuming conversion changes only large matrices; norms/QKVbias stayFP32.
+  Row lookup reconstructs requested embedding rows; dots reconstruct weights in
+  registers. Four-lane head matches existing FP32 reduction order; arbitrary
+  groups/tails tested. No full per-token dequantization, new dependency or unsafe.
+  Files: `src/matrix.rs`, model/attention/cache/ops/quantization integration,
+  `Cargo.toml` feature, constructor adaptations in existing tests,
+  `tests/quantized_model.rs`, workspace allocation checks,
+  `examples/int8_qualification.rs`, lesson16 and experiment decision.
+
+  **Actual pinned-Qwen decision:** 3 public held-out sentences,17 next-token
+  observations, G32. FP32/INT8 mean loss3.008327665/3.002956854nats passes increase
+  floor. KL.0143751891>.01, greedy15/17<.9 and maximum all-row logit change
+  2.541073799>.5 fail. Logical weights1,976,131,072→555,992,576bytes (ratio.281354098,
+  scales/FP32smalltensors included) passesmemory. Fused/once-dequantized full logits
+  exactly equal for all3cases; rejection is quantization quality, not an arithmetic
+  implementation discrepancy. FP32 default retained. NoINT4/selection bypass.
+  Decision/reproduction limits `docs/experiments/16-decision.md`.
+
+  **Physical/diagnostic evidence:** actualM1Pro16GB/macOS25G83. PointRSSbaseline
+  2,963,292,160bytes; postconversion1,372,356,608; postINT8quality1,402,126,336.
+  Wholeprocess peakRSS3,298,279,424; peakfootprint3,392,572,512 includes FP32 loader
+  and later oracle reconstruction, not an INT8-only startup peak. InputBF16file
+  unchanged988,097,824bytes; no compressedfileexport. One fixed-token diagnostic
+  prefill649.569375/726.607833ms; decode3.07200013/2.75928546tokens/s FP32/INT8.
+  Two modes/precision, no repeated-distribution speedclaim. Brief Astra portable
+  test process ran in surrounding window; possible overlap and order/thermal
+  effects uncontrolled. Repeated/sustained tests not run, owner opt-in pending;
+  noenergy/thermalclaim. Command `/usr/bin/time -l target/release/examples/int8_qualification
+  models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775
+  docs/evidence/t16-qwen` passed39.68seconds. Measuredbinary predates development
+  feature guard; hashes identify it and arithmetic/rule unchanged. Fresh reproduction
+  build requires `cargo build --offline --release --features int8-experiment
+  --example int8_qualification`.
+  Evidence ignored `docs/evidence/t16-qwen/{identity,results,completion}.json`,
+  `t16-qwen-process.txt`; no new model download.
+
+  **Checks:** `cargo fmt --all -- --check`, `cargo clippy --offline --all-targets
+  -- -D warnings`, `cargo test --offline`, plus Clippy/tests with
+  `--features int8-experiment`. All passed: default88integration+3unit; development feature92integration+3unit.
+  Synthetic quantized/reference activations exact at every named stage; cache
+  prefixes/resets exact, wrongsame-lengthshapes/admission errors preserveoutput,
+  buffered INT8 decode allocation-free. Original FP32 real teacher-forced147arrays,
+  eightgreedypositions and cache invariants passed unchanged gates; evidence
+  `t16-fp32-parity.txt` and rebuilt-default `t16-fp32-parity-final.txt`. Checklogs `t16-{fmt,clippy,test,feature-clippy,feature-test}.txt`.
+  Astra reviewed code and independently passed22targetedtests, identified/fixed
+  final-logitrow omission before measurements; final feature/evidence review had
+  no remaining actionable findings.
+  Lesson16 includes execution-order explanation, row/scale trace and unsolved exercise.
+  **Next:** T17 tiny CoreML export/CPU-only qualification.
 
 **Gate:** Lower file size is not reported as lower resident memory or faster inference without measurements. Freeze the quality acceptance rule before selecting the winning experiment. Core ML compression is a separate representation and must be qualified independently.
 

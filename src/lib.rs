@@ -7,6 +7,7 @@ pub mod benchmark;
 pub mod generation;
 pub mod kernels;
 pub mod kv_cache;
+pub mod matrix;
 pub mod model;
 pub mod ops;
 pub mod quantization;

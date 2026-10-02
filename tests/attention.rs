@@ -36,10 +36,10 @@ fn every_named_activation_matches_numpy() {
             query_bias: None,
             key_bias: None,
             value_bias: None,
-            query: &q,
-            key: &k,
-            value: &v,
-            output: &o,
+            query: (&q).into(),
+            key: (&k).into(),
+            value: (&v).into(),
+            output: (&o).into(),
         },
         config(),
         3,
@@ -82,10 +82,10 @@ fn future_tokens_cannot_change_earlier_outputs() {
         query_bias: None,
         key_bias: None,
         value_bias: None,
-        query: &q,
-        key: &k,
-        value: &v,
-        output: &o,
+        query: (&q).into(),
+        key: (&k).into(),
+        value: (&v).into(),
+        output: (&o).into(),
     };
     let before = causal_attention(&x, weights, config(), 3, 2).unwrap();
     x[8..].copy_from_slice(&[10.0, -7.0, 3.0, 8.0]);
@@ -123,10 +123,10 @@ fn every_query_head_uses_its_kv_group_without_duplication() {
             query_bias: None,
             key_bias: None,
             value_bias: None,
-            query: &q,
-            key: &k,
-            value: &v,
-            output: &o,
+            query: (&q).into(),
+            key: (&k).into(),
+            value: (&v).into(),
+            output: (&o).into(),
         },
         cfg,
         1,
@@ -146,10 +146,10 @@ fn invalid_config_lengths_and_numerics_return_errors() {
         query_bias: None,
         key_bias: None,
         value_bias: None,
-        query: &q,
-        key: &kv,
-        value: &kv,
-        output: &q,
+        query: (&q).into(),
+        key: (&kv).into(),
+        value: (&kv).into(),
+        output: (&q).into(),
     };
     for (cfg, tokens, error) in [
         (config(), 0, AttentionError::ZeroDimension),
@@ -199,7 +199,7 @@ fn invalid_config_lengths_and_numerics_return_errors() {
         query_bias: None,
         key_bias: None,
         value_bias: None,
-        query: &q[..15],
+        query: (&q[..15]).into(),
         ..weights
     };
     assert!(matches!(
@@ -214,7 +214,7 @@ fn invalid_config_lengths_and_numerics_return_errors() {
         query_bias: None,
         key_bias: None,
         value_bias: None,
-        query: &huge,
+        query: (&huge).into(),
         ..weights
     };
     assert!(matches!(
@@ -234,10 +234,10 @@ fn qkv_biases_are_added_before_rotary_and_values_are_shared_by_group() {
         1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
     ];
     let weights = AttentionWeights {
-        query: &q,
-        key: &kv,
-        value: &kv,
-        output: &output,
+        query: (&q).into(),
+        key: (&kv).into(),
+        value: (&kv).into(),
+        output: (&output).into(),
         query_bias: Some(&[1., 2., 3., 4.]),
         key_bias: Some(&[5., 6.]),
         value_bias: Some(&[-2., 3.]),

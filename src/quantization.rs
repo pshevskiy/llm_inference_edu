@@ -2,6 +2,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuantError {
     InvalidGroupSize,
+    InvalidShape {
+        expected_rows: usize,
+        expected_width: usize,
+        actual_rows: usize,
+        actual_width: usize,
+    },
     ZeroDimension,
     DimensionOverflow,
     InvalidLength {
@@ -206,6 +212,74 @@ pub fn linear_int8(
     }
     Ok(())
 }
+/// Four-lane fused candidate for tied vocabulary projection. Same reduction
+/// order as linear_lanes4 on once-dequantized weights, including arbitrary
+/// group boundaries and row tails. Original scalar linear_int8 remains callable.
+pub fn linear_int8_lanes4(
+    x: &[f32],
+    weights: &GroupwiseInt8,
+    y: &mut [f32],
+    tokens: usize,
+) -> Result<(), QuantError> {
+    if tokens == 0 {
+        return Err(QuantError::ZeroDimension);
+    }
+    let x_len = tokens
+        .checked_mul(weights.input_dim)
+        .ok_or(QuantError::DimensionOverflow)?;
+    let y_len = tokens
+        .checked_mul(weights.output_dim)
+        .ok_or(QuantError::DimensionOverflow)?;
+    for (buffer, expected, actual) in [("x", x_len, x.len()), ("y", y_len, y.len())] {
+        if actual != expected {
+            return Err(QuantError::InvalidLength {
+                buffer,
+                expected,
+                actual,
+            });
+        }
+    }
+    for (xrow, yrow) in x
+        .chunks_exact(weights.input_dim)
+        .zip(y.chunks_exact_mut(weights.output_dim))
+    {
+        for (o, (row, out)) in weights
+            .values
+            .chunks_exact(weights.input_dim)
+            .zip(yrow)
+            .enumerate()
+        {
+            let mut sums = [0.0_f32; 4];
+            let scales =
+                &weights.scales[o * weights.groups_per_row..(o + 1) * weights.groups_per_row];
+            let bulk = weights.input_dim - weights.input_dim % 4;
+            if weights.group_size.is_multiple_of(4) {
+                for (g, values) in row.chunks(weights.group_size).enumerate() {
+                    let scale = scales[g];
+                    let start = g * weights.group_size;
+                    for (chunk, q) in values.chunks_exact(4).enumerate() {
+                        let a = &xrow[start + chunk * 4..start + chunk * 4 + 4];
+                        sums[0] += a[0] * (f32::from(q[0]) * scale);
+                        sums[1] += a[1] * (f32::from(q[1]) * scale);
+                        sums[2] += a[2] * (f32::from(q[2]) * scale);
+                        sums[3] += a[3] * (f32::from(q[3]) * scale);
+                    }
+                }
+            } else {
+                for i in 0..bulk {
+                    sums[i % 4] += xrow[i] * (f32::from(row[i]) * scales[i / weights.group_size]);
+                }
+            }
+            let mut sum = ((sums[0] + sums[1]) + sums[2]) + sums[3];
+            for i in bulk..weights.input_dim {
+                sum += xrow[i] * (f32::from(row[i]) * scales[i / weights.group_size]);
+            }
+            *out = sum;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::encode;

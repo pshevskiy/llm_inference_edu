@@ -1,10 +1,11 @@
 //! Model-bound, fixed-capacity KV state; layout `[kv_head,position,head_dim]`.
+use crate::LinearError;
 use crate::attention::{AttentionConfig, AttentionWeights};
-use crate::kernels::linear_lanes4;
+use crate::matrix::ProjectionError;
 use crate::model::{Decoder, ModelConfig};
-use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu, softmax};
+use crate::ops::{OpError, residual_add, rmsnorm, silu, softmax};
+use crate::quantization::QuantError;
 use crate::rope::{RopeError, rope};
-use crate::{LinearError, linear};
 use serde::Serialize;
 use std::time::Instant;
 
@@ -57,7 +58,16 @@ pub enum CacheError {
     NonFinite,
     Operation(OpError),
     Linear(LinearError),
+    Quantized(QuantError),
     Rotary(RopeError),
+}
+impl From<ProjectionError> for CacheError {
+    fn from(e: ProjectionError) -> Self {
+        match e {
+            ProjectionError::Float(e) => Self::Linear(e),
+            ProjectionError::Quantized(e) => Self::Quantized(e),
+        }
+    }
 }
 fn finite(values: &[f32]) -> Result<(), CacheError> {
     if values.iter().any(|x| !x.is_finite()) {
@@ -346,7 +356,10 @@ impl<'a> CachedSession<'a> {
         let weights = &self.model.weights;
         let w = &mut self.scratch;
         let clock = begin(diagnostic);
-        embedding(&[token], &weights.embedding, &mut w.hidden, c.vocab_size, h)
+        weights
+            .embedding
+            .view()
+            .gather(&[token], &mut w.hidden, c.vocab_size, h)
             .map_err(CacheError::Operation)?;
         if let Some(p) = profile.as_deref_mut() {
             p.embedding_ns = elapsed(clock);
@@ -368,10 +381,10 @@ impl<'a> CachedSession<'a> {
             attend_one(
                 &w.norm,
                 AttentionWeights {
-                    query: &layer.query,
-                    key: &layer.key,
-                    value: &layer.value,
-                    output: &layer.attention_output,
+                    query: (&layer.query).into(),
+                    key: (&layer.key).into(),
+                    value: (&layer.value).into(),
+                    output: (&layer.attention_output).into(),
                     query_bias: layer.query_bias.as_deref(),
                     key_bias: layer.key_bias.as_deref(),
                     value_bias: layer.value_bias.as_deref(),
@@ -402,9 +415,16 @@ impl<'a> CachedSession<'a> {
             .map_err(CacheError::Operation)?;
             detail.residual_norm_ns = elapsed(clock);
             let clock = begin(diagnostic);
-            linear(&w.norm, &layer.gate, &mut w.gate, 1, h, c.ff_dim)
-                .map_err(CacheError::Linear)?;
-            linear(&w.norm, &layer.up, &mut w.up, 1, h, c.ff_dim).map_err(CacheError::Linear)?;
+            layer
+                .gate
+                .view()
+                .project(&w.norm, &mut w.gate, 1, h, c.ff_dim, false)
+                .map_err(CacheError::from)?;
+            layer
+                .up
+                .view()
+                .project(&w.norm, &mut w.up, 1, h, c.ff_dim, false)
+                .map_err(CacheError::from)?;
             detail.gate_up_ns = elapsed(clock);
             let clock = begin(diagnostic);
             silu(&w.gate, &mut w.activated).map_err(CacheError::Operation)?;
@@ -414,8 +434,11 @@ impl<'a> CachedSession<'a> {
             finite(&w.activated)?;
             detail.silu_product_ns = elapsed(clock);
             let clock = begin(diagnostic);
-            linear(&w.activated, &layer.down, &mut w.ffn, 1, c.ff_dim, h)
-                .map_err(CacheError::Linear)?;
+            layer
+                .down
+                .view()
+                .project(&w.activated, &mut w.ffn, 1, c.ff_dim, h, false)
+                .map_err(CacheError::from)?;
             residual_add(&w.residual, &w.ffn, &mut w.hidden).map_err(CacheError::Operation)?;
             finite(&w.hidden)?;
             detail.down_residual_ns = elapsed(clock);
@@ -438,8 +461,11 @@ impl<'a> CachedSession<'a> {
             p.final_norm_ns = elapsed(clock);
         }
         let clock = begin(diagnostic);
-        linear_lanes4(&w.norm, &weights.embedding, logits, 1, h, c.vocab_size)
-            .map_err(CacheError::Linear)?;
+        weights
+            .embedding
+            .view()
+            .project(&w.norm, logits, 1, h, c.vocab_size, true)
+            .map_err(CacheError::from)?;
         finite(logits)?;
         if let Some(p) = profile {
             p.logits_ns = elapsed(clock);
@@ -476,9 +502,18 @@ fn attend_one(
     let h = c.hidden_dim;
     let d = c.head_dim;
     let kv = c.kv_heads * d;
-    linear(x, weights.query, query, 1, h, h).map_err(CacheError::Linear)?;
-    linear(x, weights.key, key, 1, h, kv).map_err(CacheError::Linear)?;
-    linear(x, weights.value, value, 1, h, kv).map_err(CacheError::Linear)?;
+    weights
+        .query
+        .project(x, query, 1, h, h, false)
+        .map_err(CacheError::from)?;
+    weights
+        .key
+        .project(x, key, 1, h, kv, false)
+        .map_err(CacheError::from)?;
+    weights
+        .value
+        .project(x, value, 1, h, kv, false)
+        .map_err(CacheError::from)?;
     for (values, bias) in [
         (&mut *query, weights.query_bias),
         (&mut *key, weights.key_bias),
@@ -543,7 +578,10 @@ fn attend_one(
         p.attention_mix_ns = elapsed(clock);
     }
     let clock = begin(diagnostic);
-    linear(context, weights.output, output, 1, h, h).map_err(CacheError::Linear)?;
+    weights
+        .output
+        .project(context, output, 1, h, h, false)
+        .map_err(CacheError::from)?;
     finite(output)?;
     if let Some(p) = profile {
         p.attention_output_ns = elapsed(clock);

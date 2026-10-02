@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 
+[features]
+default = []
+# Development reproduction of T16's rejected pretrained INT8 experiment.
+int8-experiment = []
+
+[[example]]
+name = "int8_qualification"
+required-features = ["int8-experiment"]
+
 [dependencies]
 serde_json = "=1.0.149"
 serde = { version = "=1.0.228", features = ["derive"] }

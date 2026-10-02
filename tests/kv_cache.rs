@@ -72,22 +72,22 @@ fn partial_layer_failure_invalidates_all_state_until_reset() {
     };
     let layer = LayerWeights {
         attention_norm: vec![1.; 2],
-        query: vec![0.; 4],
-        key: vec![0.; 4],
-        value: vec![1., 0., 0., 1.],
-        attention_output: vec![0.; 4],
+        query: (vec![0.; 4]).into(),
+        key: (vec![0.; 4]).into(),
+        value: (vec![1., 0., 0., 1.]).into(),
+        attention_output: (vec![0.; 4]).into(),
         query_bias: None,
         key_bias: None,
         value_bias: None,
         ffn_norm: vec![1.; 2],
-        gate: vec![1.; 4],
-        up: vec![1.; 4],
-        down: vec![f32::MAX; 4],
+        gate: (vec![1.; 4]).into(),
+        up: (vec![1.; 4]).into(),
+        down: (vec![f32::MAX; 4]).into(),
     };
     let model = Decoder::new(
         config,
         ModelWeights {
-            embedding: vec![1.; 4],
+            embedding: (vec![1.; 4]).into(),
             layers: vec![layer],
             final_norm: vec![1.; 2],
         },
