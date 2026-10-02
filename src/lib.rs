@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ops;
+pub mod rope;
 
 /// Invalid dimensions or storage for a linear operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

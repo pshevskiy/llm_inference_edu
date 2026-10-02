@@ -363,7 +363,47 @@ Y = [[-2, 4], [-2, 13]]
   fixture check passed. The owner authorized one commit per ticket and
   continuation to T02 after this review.
 - **Next ticket:** T02 (rotary positions), authorized next.
-- [ ] **T02 — Rotary positions.** Implement RoPE with explicit head dimensions, pairing convention, absolute positions, and configurable base. Test position zero, nonzero offsets, and agreement with the independent oracle. Preserve vector norm within declared floating-point tolerance.
+- [x] **T02 — Rotary positions.** Implement RoPE with explicit head dimensions, pairing convention, absolute positions, and configurable base. Test position zero, nonzero offsets, and agreement with the independent oracle. Preserve vector norm within declared floating-point tolerance.
+
+**T02 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. Astra found no actionable
+  issues and independently verified all 35 tests, formatting, Clippy, and the
+  NumPy fixture check before commit.
+- **Files:** `src/rope.rs`, `src/lib.rs`, `tests/rope.rs`,
+  `fixtures/t02-inputs.json`, `fixtures/t02-expected.json`, `reference/rope.py`,
+  `docs/lessons/02-rope.md`, and this record. No new dependencies.
+- **Contract:** row-major `[tokens,heads,head_dim]`, even dimensions, split-half
+  pairs `(j,j+head_dim/2)`, positive configurable base, checked absolute position
+  arithmetic. Reject integer positions above 2^24 rather than silently rounding
+  consecutive positions in FP32. Shapes, lengths, finiteness, and angles are
+  checked before output writes. Ordinary final FP32 overflow remains possible.
+- **Commands/results:** `python3 reference/rope.py --write` generated independent
+  FP64-equation fixtures from FP32-rounded inputs. `python3 reference/rope.py`
+  verified saved output. `cargo fmt --all -- --check`,
+  `cargo clippy --all-targets -- -D warnings`, and `cargo test` passed; 35
+  integration tests (7 T02) passed. An initial compile error from negating a
+  usize before conversion was corrected before these passing checks.
+  `cargo test --test rope -- --nocapture --test-threads=1` reports numerical
+  errors in ignored `docs/evidence/t02-numerics.txt`. Tests use the unchanged
+  `atol=1e-5, rtol=1e-4`, and verify per-head squared norm, identity, offset
+  equivalence, both dimension products, malformed lengths/positions/base,
+  invalid angles and non-finite inputs. Rejection tests retain sentinel output.
+  Both fixtures had maximum absolute error `2.38418579e-7`; maximum relative
+  errors were `5.40462395e-7` and `6.20858657e-7` respectively.
+- **Mechanical sympathy:** no allocations or transposed copies; share
+  sine/cosine across heads. Head-strided access and repeated frequency
+  calculation remain explicit tradeoffs, not measured optimizations.
+- **Trace:** at position 1, head dimension 4, base 10000, the first pair has
+  frequency 1. `[1,0]` becomes approximately `[0.5403023,0.8414710]`;
+  position zero leaves each head unchanged.
+- **Exercise:** identify split-half pairs for head dimension 6 and explain
+  which rotates fastest for base 10000. Unsolved; see the T02 lesson.
+- **Limitations:** scalar FP32 operation, not a full model/context qualification;
+  no performance or hardware acceleration claim. Actual runtime is the same
+  M1 Pro/Rust 1.90.0/Python 3.12.8/NumPy 2.3.2 recorded in T01.
+- **Next:** T03, after Astra review and this ticket's commit.
+
 - [ ] **T03 — Causal attention and GQA.** Implement Q/K/V projections, per-head scoring scaled by inverse square root of head dimension, causal mask, softmax, value weighting, and output projection. First use transparent scalar code and small score buffers. Test that modifying a future token cannot change an earlier position's output; verify each query-to-KV-head mapping.
 - [ ] **T04 — Decoder and logits.** Compose the two-layer model, feed-forward block, residuals, final normalization, and output projection. Save named intermediate values for one fixture. Compare every block and final logits against NumPy. Add a tiny token-ID generation demo; synthetic weights are not expected to produce useful language.
 
