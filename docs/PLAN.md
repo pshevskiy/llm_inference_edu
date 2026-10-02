@@ -501,7 +501,54 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M2 — One real pretrained model
 
-- [ ] **T05 — Checkpoint inventory and validated loading.** Inspect the selected Qwen repository; pin an immutable revision and record license, hashes, tensor inventory, tokenizer/config/generation assets, and tool versions. Reuse safetensors parsing; validate tensor names, shapes, dtype, shard coverage when present, file bounds, and dimensional arithmetic. Decode the checkpoint's BF16 weights into FP32 for the first reference. Share tied embedding/output storage rather than copying it. Do not load the Python reference and Rust model simultaneously during memory measurements.
+- [x] **T05 — Checkpoint inventory and validated loading.** Inspect the selected Qwen repository; pin an immutable revision and record license, hashes, tensor inventory, tokenizer/config/generation assets, and tool versions. Reuse safetensors parsing; validate tensor names, shapes, dtype, shard coverage when present, file bounds, and dimensional arithmetic. Decode the checkpoint's BF16 weights into FP32 for the first reference. Share tied embedding/output storage rather than copying it. Do not load the Python reference and Rust model simultaneously during memory measurements.
+
+**T05 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. Astra's initial example-admission
+  finding was corrected: verification now precedes metadata output and there is
+  no extra full checkpoint read. Astra rechecked it with no remaining findings.
+- **Files:** `src/weights.rs`, `src/lib.rs`, `tests/weights.rs`,
+  `examples/load_qwen.rs`, `reference/download_qwen.py`,
+  `fixtures/qwen-inventory.json`, `fixtures/qwen-tensors.json`,
+  `docs/lessons/05-weights.md`, Cargo manifest/lock, `.gitignore`, this record.
+- **Artifact:** Qwen/Qwen2.5-0.5B-Instruct revision
+  `7ae557604adf67be50417f59c2c2f167def9a775`, Apache-2.0, one BF16 shard,
+  290 tensors. Size `988097824` bytes; SHA256
+  `fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe`.
+  Config/generation/tokenizer assets and all hashes are recorded in the small
+  inventory; full pretrained files are ignored. No model bytes entered Git.
+- **Dependencies/tools:** safetensors 0.6.2 established bounds/format parser;
+  sha2 0.10.9 integrity checking. Cargo fetched 11 locked small dependencies.
+  Actual host Python 3.12.8, Rust/Cargo 1.90.0 and verified-TLS curl downloader.
+  Python urllib initially failed certificate validation; using host curl fixed
+  it without disabling TLS checks. Selected T06 reference pins are Transformers
+  4.46.3, PyTorch 2.6.0 and tokenizers 0.20.3; not installed/run in T05.
+- **Commands/results:** `python3 reference/download_qwen.py --download` passed,
+  verified every selected size and Git-blob/LFS identity, saved SHA256 inventory.
+  `cargo fmt --all -- --check`, `cargo clippy --offline --all-targets -- -D warnings`,
+  `cargo test --offline`, `git diff --check` passed: 46 integration tests (4 new).
+  `cargo build --offline --release --example load_qwen` and
+  `/usr/bin/time -l target/release/examples/load_qwen models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed. Initial sandbox timing counters were unavailable; approved bounded
+  rerun outside sandbox produced actual metrics. Local ignored evidence:
+  `docs/evidence/t05-test.txt`, `docs/evidence/t05-load.txt`.
+- **Resources:** logical FP32 weights `1976131072` bytes; measured maximum RSS
+  `2813886464` bytes, macOS peak footprint `2969914008` bytes, elapsed `4.12 s`.
+  Single load, not a benchmark distribution. Same recorded M1 Pro host as T01.
+  No Python reference resident; no simultaneous duplicate output-head matrix.
+  Checked raw+decoded planning payload budget 6 GiB; this is not inference or
+  mobile admission. File/logical/physical metrics remain distinct.
+- **Mechanism/trace:** validate pinned identity/config/dimensions, file size/hash,
+  complete names/shapes/dtype/parser bounds, then expand BF16 little-endian
+  `0x3f80` into FP32 `0x3f800000` (1.0). Biases are retained; tied output uses
+  the single embedding tensor. Failure yields no valid partially loaded model.
+- **Exercise:** compute one K-projection matrix's FP32 bytes and locate output
+  row 3. Unsolved in lesson 05.
+- **Limitations:** exact single-shard Qwen layout only; unsupported shard layouts
+  fail explicitly. No real forward, tokenization, ANE or inference speed claim.
+  **Next:** T06 under the owner's continued implementation/setup authorization.
+
 - [ ] **T06 — Tokenization and real-model parity.** Reuse tokenizers and implement only the selected template behavior, validated against its pinned reference. Test whitespace, Unicode, special tokens, and message boundaries; avoid double insertion of BOS/EOS. Compare selected intermediate values and teacher-forced logits on short prompts. Keep the reference small: no full `[long_sequence, vocabulary]` logits dump unless necessary.
 - [ ] **T07 — Uncached generation CLI.** Implement a simple greedy loop that recomputes the prefix as a correctness baseline. Respect configured stop tokens and output/context limits. Print timing separately from generated text. Generate a short answer from the real checkpoint; document that uncached execution is intentionally inefficient.
 

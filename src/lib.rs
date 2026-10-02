@@ -6,6 +6,7 @@ pub mod attention;
 pub mod model;
 pub mod ops;
 pub mod rope;
+pub mod weights;
 
 /// Invalid dimensions or storage for a linear operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
