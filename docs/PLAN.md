@@ -1093,7 +1093,58 @@ Y = [[-2, 4], [-2, 13]]
   Astra final code/evidence review found no remaining actionable issues. Lesson17 explains order, position0/GQAtrace,
   unsolvedlayout exercise and publicsources. Reproduction/limitations experiment17.
   **Next:** T18 qualify pinned pretrained persistentstate and positions.
-- [ ] **T18 — Pretrained cached Core ML path.** Qualify the real checkpoint only after T17. Evaluate persistent state and causal positions against Rust/reference results. Audit the actual OS/SDK requirements of the selected state APIs. Prefer an artifact that retains cache state; do not assume separately loaded prefill/decode artifacts share either weights or state.[^stateful]
+- [x] **T18 — Pretrained cached Core ML path.** Qualify the real checkpoint only after T17. Evaluate persistent state and causal positions against Rust/reference results. Audit the actual OS/SDK requirements of the selected state APIs. Prefer an artifact that retains cache state; do not assume separately loaded prefill/decode artifacts share either weights or state.[^stateful]
+
+  **Short CPU-only checkpoint qualification completed 2026-10-03; owner review pending.**
+  Added `reference/coreml_qwen{,_graph,_export}.py`, portable
+  `reference/test_coreml_session.py`, lesson18/experiment18. Same isolated pins;
+  no Rust production change/dependency, signing change or model download.
+  Audited actual public state floor macOS15/iOS18, installed runtime26.6.2,
+  CLTSDK26.5/Swift6.3.3. Minimalct9probe rejectsFP32state and acceptsFP16state.
+  OriginalF32sourcecontrol passes392arrays/eightgreedyIDs; singleFP16cache fails
+  unchanged gates(maxbudget21.85594461/logiterror.02270013). Greedy alone insufficient.
+  Explicit secondcandidate FP16leading+FP16residual reconstructedFP32 passes
+  source/traced and nativeCPU_ONLY qualification. Fourplanes/layer,96states
+  [2,32,64],786,432logicalbytes equalsFP32cache; approximate/narrowerrange, not
+  losslessgeneralFP32 or cachememorysaving. No tolerance/model switch.
+
+  **Actual nativechecks:** all392arrays at8positions pass frozen logit.001/
+  intermediate.005/rtol.0001 gates, maxbudget.6105585152(layer21output),
+  maxlogiterror.000674247742; all8greedyIDs exact. Threeinterleaved independent
+  native states shareonecompiledmodel; badtoken/position preserves complete
+  statehash; resetreplaypasses. Wrapperownsposition, validatesbeforepredict,
+  invalidatesafterpartial/nonfinitefailure;3portablefakepredictortests pass
+  admission/capacity/failure/reset/independentstate contracts. No mirroredRustKV
+  or separatelyloadedprefill/decodeweightsharing assumption. Sequentialone-token
+  prefill/decode inoneartifact. Qualified shortpositions0..2 only, not full32prefixes,
+  mobile/largevaluerange/ANEplacement or completegenerationpolicy.
+
+  **Resource/costs:** actualM1Pro16GB; verifiedcheckpoint FP32weights/compute,
+  publicpersistentpairedhalfstate. Convert12.227460166s/save.697897417s;
+  compile.689875s; compiledload4.869456667s. Export/compile/check processpeakRSS
+  3,244,670,976/361,709,568/4,307,697,664bytes, peakfootprint
+  2,852,948,656/262,013,936/276,465,392bytes. Imports/mappedpages included,
+  separatecompilerservices notattributed. Conservative3weightcopies+1GiB plan
+  admittedagainst8GiB plusdiskcheck, notRSS or enforcedmemorylimit. Package
+  1,977,422,232bytes distinctinputBF16file/logicalweights/RSS. Eight49-output
+  predictions37.12–97.33ms diagnostics, no generationbenchmark/speedclaim.
+  No sustained/energy/thermal/ANEclaim. Casts/residualplanes/GQAexpansion/fullcap
+  attention maintenance/bandwidth costs documented; RustFP32default unchanged.
+
+  Commands `reference/.venv/bin/python reference/coreml_qwen.py
+  models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775
+  docs/evidence/t18-final-preflight` and `reference/.venv/bin/python
+  reference/coreml_qwen_export.py run MODEL_DIR docs/evidence/t18-final-preflight
+  docs/evidence/t18-qwen` passed; exactMODEL_DIR inlesson18.
+  Immutableidentity/control/candidates/traced/nativechecks/artifacthashes,
+  phaseprocesslogs/completion ignored`t18-{final-preflight,qwen}`. Initial
+  negative`t18-preflight` preserved; Astra identifiedmissinghostchip/model/RAM,
+  finalidentitycorrected. `cargo fmt --all -- --check`, offlineClippywarningsdenied,
+  `cargo test --offline` passed88integration+3unit; wrapper3tests/syntaxpassed.
+  Logs`t18-{fmt,clippy,test,wrapper-tests}.txt`. Astra final code/nativeevidence review found no remaining actionable issues.
+  Lesson18 givesexecutionorder, pairedvaluetrace/slottrace and unsolvedexercise.
+  **Next:** T19 public CPU+ANE policy/placement qualification; repeatedperformance
+  remainsowneropt-in pending, allowedANE alone is notplacementproof.
 - [ ] **T19 — Placement and end-to-end experiment.** Explicitly allow CPU + Neural Engine and exclude GPU inference. Compare CPU-only Core ML, CPU+ANE Core ML, and our CPU implementation with identical inputs and disclosed precision. Capture Core ML performance reports/available traces. Attribute actual expensive work; “ANE allowed” and supported/preferred-device metadata alone do not establish measured ANE execution.[^compute-units][^coreml-profile]
 
 **Important boundary:** MLX documents CPU/GPU execution; it is not our ANE execution route.[^mlx] Core ML permits CPU+ANE without GPU, but does not promise every operation runs on ANE.[^compute-units] Apple's transformer deployment guidance supplies experiments involving layouts, copies, and bandwidth—not universal performance guarantees.[^ane]

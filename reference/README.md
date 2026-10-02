@@ -103,3 +103,16 @@ fixture and checks35named outputs at lengths1..4. CPU_ONLY and FP32 are explicit
 no GPU inference, pretrained state or ANE placement is claimed. Results/artifacts
 remain under ignored `docs/evidence/`. Export, compile and CPU check are separate
 processes with individual load/timing/memory scopes.
+
+## Opt-in pretrained state qualification (T18)
+
+[Lesson18](../docs/lessons/18-coreml-state.md) reproduces the public state dtype
+probe, independent numerical preflight, paired-cache checkpoint conversion and
+CPU_ONLY checks. Single FP16 cache failed unchanged numerical gates; paired FP16
+leading/residual state passed the tested short cases while using the same logical
+bytes as FP32 cache. This is an approximate internal state experiment, not a
+lossless format, ANE placement proof, CLI precision switch or mobile validation.
+One compiled model owns native state; Rust state is not copied into it. The
+portable fake-predictor wrapper checks need only the isolated NumPy environment.
+Large artifacts remain ignored. Source/traced/native gates precede any placement
+or speed claim; exact limitations are in experiment18.
