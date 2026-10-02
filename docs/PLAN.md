@@ -1057,7 +1057,42 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M6 — Core ML and Neural Engine qualification
 
-- [ ] **T17 — Tiny-model export experiment.** Add isolated, pinned Python conversion tooling. Export the already-verified synthetic graph first, using supported public Core ML APIs. Test a narrow shape range and CPU-only correctness before investigating ANE placement. Record export/compilation peak memory and load cost separately from inference. Do not invent private ANE bindings.
+- [x] **T17 — Tiny-model export experiment.** Add isolated, pinned Python conversion tooling. Export the already-verified synthetic graph first, using supported public Core ML APIs. Test a narrow shape range and CPU-only correctness before investigating ANE placement. Record export/compilation peak memory and load cost separately from inference. Do not invent private ANE bindings.
+
+  **Tiny CPU-only experiment completed 2026-10-03; owner review pending.**
+  Added isolated pinned `reference/coreml-{requirements,lock}.txt`,
+  `coreml_tiny_graph.py`, phased `coreml_tiny.py`, lesson17/experiment17 and
+  referenceREADME. Extracted `decoder.outputs_for(ids)` without changing the
+  original fixture (byte-for-byte verification passed). Existing referencevenv
+  only; installedCoreMLTools9.0 and captured full dependency lock, pipcheckclean.
+  No Rust runtime dependency/productionengine, pretrained export orGPUscope.
+  Public ct.convert/compile_model/CompiledMLModel, explicitCPU_ONLY throughout.
+  Int32IDs, FP32typedcompute/output,35namedarrays, bounded enumeratedT1..4,
+  macOS13/iOS16 deployment floor. Statelessgraph, no cache/ANEclaim.
+
+  **Actual checks:** all4source/tracedshapes checked against independentNumPy;
+  convertedCPUall140arrays pass unchangedtiny atol1e-5/rtol1e-4, maxabs9.536743164e-7,
+  maxbudgetfraction.040932612. All10greedyIDs exact. Futuretoken preserves
+  earlier3logitrows within samegate(maxabs4.172325134e-7). ActualM1Pro16GB.
+  Separate child processes: conversion.610990375s/save.001613s, compilation
+  .069516583s, compiledload.144861459s. Export/compile/check peakRSS
+  335,806,464/313,294,848/319,504,384bytes; peakfootprint
+  257,770,360/237,126,520/240,747,480bytes. IncludesPython imports;
+  separate compiler-service memory not attributed. Onepredict/shape
+  1.768875/1.469667/1.360875/1.375417ms diagnostics only, no speeddistribution,
+  energy/sustainedthermal/ANEplacement. Filebytes123,673 distinctlogical/RSS.
+  Commands `reference/.venv/bin/python reference/decoder.py`,
+  `reference/.venv/bin/python -m py_compile reference/coreml_tiny.py
+  reference/coreml_tiny_graph.py`, `reference/.venv/bin/python reference/coreml_tiny.py
+  run docs/evidence/t17-final` passed. Raw ignored evidence identity/phaseJSON,
+  artifacts/processlogs/completion under`t17-final`; setup`t17-setup.txt`.
+  Astra found missing importedRoPEoracle hash in first identity; fixed/reranfresh,
+  initial`t17-tiny` retained. Rule/tolerances unchanged.
+  `cargo fmt --all -- --check`, `cargo clippy --offline --all-targets -- -D warnings`,
+  `cargo test --offline` passed88integration+3unit; ignored`t17-{fmt,clippy,test}.txt`.
+  Astra final code/evidence review found no remaining actionable issues. Lesson17 explains order, position0/GQAtrace,
+  unsolvedlayout exercise and publicsources. Reproduction/limitations experiment17.
+  **Next:** T18 qualify pinned pretrained persistentstate and positions.
 - [ ] **T18 — Pretrained cached Core ML path.** Qualify the real checkpoint only after T17. Evaluate persistent state and causal positions against Rust/reference results. Audit the actual OS/SDK requirements of the selected state APIs. Prefer an artifact that retains cache state; do not assume separately loaded prefill/decode artifacts share either weights or state.[^stateful]
 - [ ] **T19 — Placement and end-to-end experiment.** Explicitly allow CPU + Neural Engine and exclude GPU inference. Compare CPU-only Core ML, CPU+ANE Core ML, and our CPU implementation with identical inputs and disclosed precision. Capture Core ML performance reports/available traces. Attribute actual expensive work; “ANE allowed” and supported/preferred-device metadata alone do not establish measured ANE execution.[^compute-units][^coreml-profile]
 

@@ -91,3 +91,15 @@ arrays `atol=5e-3`, both `rtol=1e-4`; all values must be finite and all eight
 teacher-forced greedy IDs must agree. See lesson 06 for the measured reason and
 initial failed experiments. These gates apply only to this FP32 checkpoint on
 short inputs; original synthetic/operator tolerances remain unchanged.
+
+## Opt-in tiny Core ML export (T17)
+
+The owner approved isolated export setup. `coreml-requirements.txt` pins the
+selected tools; `coreml-lock.txt` pins the complete export environment. It shares
+the ignored `reference/.venv` reference-only environment; Rust has no Core ML or
+Python dependency. Use the commands and public API links in
+[lesson17](../docs/lessons/17-coreml-tiny.md). The export graph uses only the tiny
+fixture and checks35named outputs at lengths1..4. CPU_ONLY and FP32 are explicit;
+no GPU inference, pretrained state or ANE placement is claimed. Results/artifacts
+remain under ignored `docs/evidence/`. Export, compile and CPU check are separate
+processes with individual load/timing/memory scopes.

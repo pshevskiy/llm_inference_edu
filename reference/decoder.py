@@ -13,10 +13,9 @@ EXPECTED=ROOT/"fixtures"/"t04-expected.json"
 def rms(x,w,eps): return x/np.sqrt(np.mean(x*x,axis=-1,keepdims=True)+eps)*w
 
 
-def generate():
+def outputs_for(ids):
     if np.__version__!="2.3.2": raise RuntimeError("Use reference/requirements.txt")
     file=json.loads((ROOT/"fixtures"/"tiny-model.json").read_text()); c=file["config"]; w=file["weights"]
-    ids=json.loads((ROOT/"fixtures"/"t04-inputs.json").read_text())["token_ids"]
     h,d,qh,kvh,ff=(c[k] for k in ["hidden_dim","head_dim","query_heads","kv_heads","ff_dim"])
     eps=float(np.float32(c["norm_epsilon"]))
     fp=lambda v:np.asarray(v,dtype=np.float32).astype(np.float64)
@@ -44,7 +43,13 @@ def generate():
         outputs.update({prefix+k:v for k,v in named.items()})
     final=rms(x,fp(w["final_norm"]),eps); outputs["final_norm"]=final; outputs["logits"]=final@table.T
     if not all(np.all(np.isfinite(v)) for v in outputs.values()): raise ValueError("Non-finite decoder reference")
-    return json.dumps({"numpy":np.__version__,"outputs":{k:v.astype(np.float32).reshape(-1).tolist() for k,v in outputs.items()}},indent=2,allow_nan=False)+"\n"
+    return {k:v.astype(np.float32) for k,v in outputs.items()}
+
+
+def generate():
+    ids=json.loads((ROOT/"fixtures"/"t04-inputs.json").read_text())["token_ids"]
+    outputs=outputs_for(ids)
+    return json.dumps({"numpy":np.__version__,"outputs":{k:v.reshape(-1).tolist() for k,v in outputs.items()}},indent=2,allow_nan=False)+"\n"
 
 
 def main():
