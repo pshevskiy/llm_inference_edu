@@ -5,6 +5,7 @@
 pub mod attention;
 pub mod benchmark;
 pub mod generation;
+pub mod kernels;
 pub mod kv_cache;
 pub mod model;
 pub mod ops;
@@ -51,6 +52,29 @@ pub fn linear(
     input_dim: usize,
     output_dim: usize,
 ) -> Result<(), LinearError> {
+    validate_linear(x, w, y, tokens, input_dim, output_dim)?;
+
+    for t in 0..tokens {
+        for o in 0..output_dim {
+            let mut sum = 0.0_f32;
+            for i in 0..input_dim {
+                sum += x[t * input_dim + i] * w[o * input_dim + i];
+            }
+            y[t * output_dim + o] = sum;
+        }
+    }
+    Ok(())
+}
+
+/// Shared shape admission; arithmetic implementations remain separately callable.
+pub(crate) fn validate_linear(
+    x: &[f32],
+    w: &[f32],
+    y: &[f32],
+    tokens: usize,
+    input_dim: usize,
+    output_dim: usize,
+) -> Result<(), LinearError> {
     if tokens == 0 || input_dim == 0 || output_dim == 0 {
         return Err(LinearError::ZeroDimension);
     }
@@ -79,14 +103,5 @@ pub fn linear(
         }
     }
 
-    for t in 0..tokens {
-        for o in 0..output_dim {
-            let mut sum = 0.0_f32;
-            for i in 0..input_dim {
-                sum += x[t * input_dim + i] * w[o * input_dim + i];
-            }
-            y[t * output_dim + o] = sum;
-        }
-    }
     Ok(())
 }

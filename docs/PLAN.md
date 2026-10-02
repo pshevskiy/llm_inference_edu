@@ -865,7 +865,52 @@ Y = [[-2, 4], [-2, 13]]
   Lesson 12 explains execution order, trace and unsolved bounded exercise.
   **Next:** T13 one measured projection-kernel experiment.
 
-- [ ] **T13 — One CPU-kernel improvement.** Select one expensive operation from the profile. First investigate loop ordering/blocking and compiler output; then one explicit vectorized or threaded implementation where justified. Keep a callable scalar reference. Benchmark realistic model shapes, not only convenient square matrices. Do not add both threading and SIMD in one unexplained change.
+- [x] **T13 — One CPU-kernel improvement.** Select one expensive operation from the profile. First investigate loop ordering/blocking and compiler output; then one explicit vectorized or threaded implementation where justified. Keep a callable scalar reference. Benchmark realistic model shapes, not only convenient square matrices. Do not add both threading and SIMD in one unexplained change.
+  **Implemented 2026-10-03; owner review pending.** T11 profile selected tied
+  vocabulary projection (108.91 ms of 406.71 ms single diagnostic). Original
+  contiguous-row scalar loop already compiles vectorized products but scalar
+  dependent additions. Added safe four-lane accumulation candidate with explicit
+  left reduction and scalar tail in `src/kernels.rs`; Rust1.90/LLVM21.1.1 M1
+  assembly shows two pairs of SIMD `fmul.2s`/`fadd.2s`. No unsafe, threads,
+  dependencies or fast-math flags. Original `linear` remains callable and retains
+  increasing-index summation; shape admission shared without changing errors.
+  Adopted only vocabulary projection in inspected/ordinary/cached decoder paths;
+  all other model projections retain original scalar arithmetic. Added kernel
+  tests, release experiment, lesson 13 and `docs/experiments/13-lanes.md`.
+
+  **Brief kernel experiment:** fresh release `kernel_benchmark` on actual M1 Pro
+  16 GB/macOS26.6.2/AC/Rust1.90.0; synthetic public FP32 values with five actual
+  Qwen rectangular shapes, three warmups/ten alternating-order samples per kernel.
+  Independent FP64 expectations use unchanged operator atol1e-5 + rtol1e-4.
+  Isolated vocabulary896→151936 median scalar108.4454995 ms versus lanes27.035333
+  ms; gate896→4864 3.4659375/0.8759585 ms; down4864→896
+  3.946813/0.991479 ms. Raw JSONL, actual executable hash, runtime source/compiler,
+  public input formula and complete results preserved in ignored
+  `docs/evidence/t13-kernels-isolated/`. Preliminary overlapping run retained
+  separately and excluded. Compiler excerpts in `t13-{scalar,lanes}-asm.txt`.
+  Payload checked against6GiB, FP64 reference/output rows included. These are
+  bounded synthetic kernel observations, not full-model or sustained speedups;
+  energy and physical memory not measured by the kernel harness.
+
+  **Checks:** fmt, offline Clippy warnings denied, offline tests passed
+  (80 integration + 2 unit); evidence `docs/evidence/t13-{fmt,clippy,test}.txt`.
+  Tests include widths1–4864, odd tails, independent hand/FP64 answers, all product
+  overflow and exact-buffer errors before writes. Release `qwen_parity` passed
+  unchanged frozen reference gates, all teacher-forced IDs and exact cached/
+  uncached equality; evidence `docs/evidence/t13-parity.txt`. Final held-out
+  logit maxabs2.28643417e-4; tolerances unchanged. Original scalar reference remains
+  available when debugging reduction differences. Bounded real benchmark smoke
+  (`benchmark qwen ... benchmarks/qwen-short.json docs/evidence/t13-qwen-single
+  --single`) passed, one sample per mode; diagnostic projection27.438834 ms,
+  total325.046708 ms, fixed decode3.061431 tokens/s. These are scoped single
+  observations, not statistical before/after model speedup claims. Evidence
+  `docs/evidence/t13-qwen-single/` and `t13-qwen-run.txt`. No architecture-specific
+  intrinsics; other targets/compiler versions need their own timing evidence.
+  Astra independently passed21 targeted tests/fmt/Clippy and found no actionable
+  findings. Lesson 13 provides execution order, lane trace and unsolved exercise.
+  **Next:** T14 prefill versus decode experiment; sustained model tests pending
+  explicit opt-in, longer context remains unqualified.
+
 - [ ] **T14 — Prefill versus decode experiment.** Compare matrix-vector decode and chunked matrix-matrix prefill, varying the chunk size within the memory budget. An Accelerate/BLAS comparison may be a labeled development benchmark, not a replacement for the learning implementation. Record where data movement, arithmetic, or launch/setup cost appears to dominate.
 
 **Gate:** At least one reproducible optimization experiment, including a negative result when that is what measurements show. Keep an optimization only with evidence or a clear simplification benefit. No obligation to beat mature runtimes at this stage.

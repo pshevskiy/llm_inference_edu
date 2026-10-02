@@ -1,5 +1,6 @@
 //! Model-bound, fixed-capacity KV state; layout `[kv_head,position,head_dim]`.
 use crate::attention::{AttentionConfig, AttentionWeights};
+use crate::kernels::linear_lanes4;
 use crate::model::{Decoder, ModelConfig};
 use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu, softmax};
 use crate::rope::{RopeError, rope};
@@ -437,7 +438,7 @@ impl<'a> CachedSession<'a> {
             p.final_norm_ns = elapsed(clock);
         }
         let clock = begin(diagnostic);
-        linear(&w.norm, &weights.embedding, logits, 1, h, c.vocab_size)
+        linear_lanes4(&w.norm, &weights.embedding, logits, 1, h, c.vocab_size)
             .map_err(CacheError::Linear)?;
         finite(logits)?;
         if let Some(p) = profile {

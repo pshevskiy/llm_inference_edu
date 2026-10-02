@@ -57,3 +57,15 @@ measurements. Benchmarks now reuse the caller logits row and session workspace;
 metadata records resident workspace separately from the conservative scratch
 estimate (workspace plus up to two legacy caller rows). Historical T11 records
 retain their original allocation pattern and accounting.
+
+T13's short projection experiment uses public synthetic values and actual Qwen
+rectangular dimensions, not whole-model timing:
+
+```sh
+cargo build --offline --release --example kernel_benchmark
+target/release/examples/kernel_benchmark docs/evidence/NEW-kernels
+```
+
+An immutable `identity.json` precedes samples; `completion.json` identifies a
+completed run. Inspect both. `docs/experiments/13-lanes.md` records the decision
+and limitations. Each kernel remains independently callable.

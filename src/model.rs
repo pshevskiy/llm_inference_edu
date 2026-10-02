@@ -3,6 +3,7 @@
 use crate::attention::{
     AttentionConfig, AttentionError, AttentionTrace, AttentionWeights, causal_attention,
 };
+use crate::kernels::linear_lanes4;
 use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu};
 use crate::{LinearError, linear};
 use serde::{Deserialize, Serialize};
@@ -456,7 +457,7 @@ impl Decoder {
         let mut logits = vec![0.0; c.vocab_size];
         let trace = if inspect {
             let mut all_logits = vec![0.0; product(t, c.vocab_size)?];
-            linear(
+            linear_lanes4(
                 &final_norm,
                 &self.weights.embedding,
                 &mut all_logits,
@@ -474,7 +475,7 @@ impl Decoder {
                 logits: all_logits,
             })
         } else {
-            linear(
+            linear_lanes4(
                 &final_norm[(t - 1) * h..],
                 &self.weights.embedding,
                 &mut logits,
