@@ -23,6 +23,8 @@ pub struct QwenConfig {
     pub tie_word_embeddings: bool,
     pub torch_dtype: String,
     pub use_sliding_window: bool,
+    #[serde(default)]
+    pub rope_scaling: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -91,6 +93,7 @@ pub fn tensor_shapes(c: &QwenConfig) -> Result<BTreeMap<String, Vec<usize>>, Loa
         || !c.tie_word_embeddings
         || c.torch_dtype != "bfloat16"
         || c.use_sliding_window
+        || c.rope_scaling.is_some()
         || [
             c.vocab_size,
             c.hidden_size,
@@ -260,7 +263,7 @@ pub fn decode_qwen(data: &[u8], config: QwenConfig) -> Result<LoadedQwen, LoadEr
     })
 }
 
-fn verified_file(
+pub(crate) fn verified_file(
     directory: &Path,
     name: &str,
     inventory: &Inventory,

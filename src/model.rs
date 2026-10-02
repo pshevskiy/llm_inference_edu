@@ -30,6 +30,12 @@ pub struct LayerWeights {
     pub key: Vec<f32>,
     pub value: Vec<f32>,
     pub attention_output: Vec<f32>,
+    #[serde(default)]
+    pub query_bias: Option<Vec<f32>>,
+    #[serde(default)]
+    pub key_bias: Option<Vec<f32>>,
+    #[serde(default)]
+    pub value_bias: Option<Vec<f32>>,
     pub ffn_norm: Vec<f32>,
     pub gate: Vec<f32>,
     pub up: Vec<f32>,
@@ -52,7 +58,7 @@ struct ModelFile {
 }
 
 /// Weights are immutable after construction and validation. Output weights are
-/// tied to the embedding table, with no duplicate storage. Biases are absent.
+/// tied to the embedding table, with no duplicate storage. Q/K/V biases are optional.
 pub struct Decoder {
     config: ModelConfig,
     weights: ModelWeights,
@@ -88,6 +94,7 @@ pub struct ForwardOutput {
 #[derive(Debug)]
 pub enum ModelError {
     Json(String),
+    Checkpoint(crate::weights::LoadError),
     InvalidConfig(&'static str),
     DimensionOverflow,
     InvalidLayerCount,
@@ -211,8 +218,82 @@ impl Decoder {
             ] {
                 weight(name, Some(i), values, len)?;
             }
+            for (name, values, len) in [
+                ("query_bias", &l.query_bias, c.hidden_dim),
+                ("key_bias", &l.key_bias, kv),
+                ("value_bias", &l.value_bias, kv),
+            ] {
+                if let Some(values) = values {
+                    weight(name, Some(i), values, len)?;
+                }
+            }
         }
         Ok(Self { config, weights })
+    }
+
+    /// Consumes validated Qwen buffers; moves allocations rather than copying
+    /// weights. Capacity is a caller admission choice, never the tokenizer's
+    /// advertised context. T06 starts with at most 32 tokens.
+    pub fn from_qwen(
+        loaded: crate::weights::LoadedQwen,
+        capacity: usize,
+    ) -> Result<Self, ModelError> {
+        use crate::weights::{LoadError, tensor_shapes};
+        let c = loaded.config;
+        tensor_shapes(&c).map_err(ModelError::Checkpoint)?;
+        if capacity == 0 || capacity > 32 || capacity > c.max_position_embeddings {
+            return Err(ModelError::ContextLimit);
+        }
+        let mut tensors = loaded.tensors;
+        let mut take = |name: &str| {
+            tensors
+                .remove(name)
+                .ok_or_else(|| ModelError::Checkpoint(LoadError::MissingTensor(name.into())))
+        };
+        let embedding = take("model.embed_tokens.weight")?;
+        let final_norm = take("model.norm.weight")?;
+        let mut layers = Vec::with_capacity(c.num_hidden_layers);
+        for i in 0..c.num_hidden_layers {
+            let p = format!("model.layers.{i}");
+            layers.push(LayerWeights {
+                attention_norm: take(&format!("{p}.input_layernorm.weight"))?,
+                query: take(&format!("{p}.self_attn.q_proj.weight"))?,
+                key: take(&format!("{p}.self_attn.k_proj.weight"))?,
+                value: take(&format!("{p}.self_attn.v_proj.weight"))?,
+                query_bias: Some(take(&format!("{p}.self_attn.q_proj.bias"))?),
+                key_bias: Some(take(&format!("{p}.self_attn.k_proj.bias"))?),
+                value_bias: Some(take(&format!("{p}.self_attn.v_proj.bias"))?),
+                attention_output: take(&format!("{p}.self_attn.o_proj.weight"))?,
+                ffn_norm: take(&format!("{p}.post_attention_layernorm.weight"))?,
+                gate: take(&format!("{p}.mlp.gate_proj.weight"))?,
+                up: take(&format!("{p}.mlp.up_proj.weight"))?,
+                down: take(&format!("{p}.mlp.down_proj.weight"))?,
+            });
+        }
+        if let Some(name) = tensors.keys().next() {
+            return Err(ModelError::Checkpoint(LoadError::UnexpectedTensor(
+                name.clone(),
+            )));
+        }
+        Self::new(
+            ModelConfig {
+                vocab_size: c.vocab_size,
+                layers: c.num_hidden_layers,
+                hidden_dim: c.hidden_size,
+                query_heads: c.num_attention_heads,
+                kv_heads: c.num_key_value_heads,
+                head_dim: c.hidden_size / c.num_attention_heads,
+                ff_dim: c.intermediate_size,
+                max_tokens: capacity,
+                rope_base: c.rope_theta,
+                norm_epsilon: c.rms_norm_eps,
+            },
+            ModelWeights {
+                embedding,
+                layers,
+                final_norm,
+            },
+        )
     }
 
     pub fn config(&self) -> ModelConfig {
@@ -264,6 +345,9 @@ impl Decoder {
                     key: &l.key,
                     value: &l.value,
                     output: &l.attention_output,
+                    query_bias: l.query_bias.as_deref(),
+                    key_bias: l.key_bias.as_deref(),
+                    value_bias: l.value_bias.as_deref(),
                 },
                 AttentionConfig {
                     hidden_dim: h,

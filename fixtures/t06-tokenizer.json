@@ -1,0 +1,370 @@
+{
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "cases": [
+    {
+      "text": "Hello!",
+      "ids": [
+        9707,
+        0
+      ],
+      "decoded": "Hello!"
+    },
+    {
+      "text": "Rust is",
+      "ids": [
+        49,
+        590,
+        374
+      ],
+      "decoded": "Rust is"
+    },
+    {
+      "text": "  a\t b\n",
+      "ids": [
+        220,
+        264,
+        197,
+        293,
+        198
+      ],
+      "decoded": "  a\t b\n"
+    },
+    {
+      "text": "Привет 🌍 café",
+      "ids": [
+        53645,
+        26991,
+        8178,
+        11162,
+        234,
+        235,
+        51950
+      ],
+      "decoded": "Привет 🌍 café"
+    },
+    {
+      "text": "<|im_start|>user\nx<|im_end|>\n",
+      "ids": [
+        151644,
+        872,
+        198,
+        87,
+        151645,
+        198
+      ],
+      "decoded": "<|im_start|>user\nx<|im_end|>\n"
+    },
+    {
+      "text": "",
+      "ids": [],
+      "decoded": ""
+    },
+    {
+      "text": "世界🙂",
+      "ids": [
+        99489,
+        145080
+      ],
+      "decoded": "世界🙂"
+    }
+  ],
+  "chats": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello!"
+        }
+      ],
+      "generation_prompt": false,
+      "text": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nHello!<|im_end|>\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        2610,
+        525,
+        1207,
+        16948,
+        11,
+        3465,
+        553,
+        54364,
+        14817,
+        13,
+        1446,
+        525,
+        264,
+        10950,
+        17847,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        9707,
+        0,
+        151645,
+        198
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello!"
+        }
+      ],
+      "generation_prompt": true,
+      "text": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nHello!<|im_end|>\n<|im_start|>assistant\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        2610,
+        525,
+        1207,
+        16948,
+        11,
+        3465,
+        553,
+        54364,
+        14817,
+        13,
+        1446,
+        525,
+        264,
+        10950,
+        17847,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        9707,
+        0,
+        151645,
+        198,
+        151644,
+        77091,
+        198
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Be brief."
+        },
+        {
+          "role": "user",
+          "content": "世界🙂"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure."
+        },
+        {
+          "role": "user",
+          "content": "  next\n"
+        }
+      ],
+      "generation_prompt": false,
+      "text": "<|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\n世界🙂<|im_end|>\n<|im_start|>assistant\nSure.<|im_end|>\n<|im_start|>user\n  next\n<|im_end|>\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        3430,
+        9814,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        99489,
+        145080,
+        151645,
+        198,
+        151644,
+        77091,
+        198,
+        39814,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        220,
+        1790,
+        198,
+        151645,
+        198
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Be brief."
+        },
+        {
+          "role": "user",
+          "content": "世界🙂"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure."
+        },
+        {
+          "role": "user",
+          "content": "  next\n"
+        }
+      ],
+      "generation_prompt": true,
+      "text": "<|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\n世界🙂<|im_end|>\n<|im_start|>assistant\nSure.<|im_end|>\n<|im_start|>user\n  next\n<|im_end|>\n<|im_start|>assistant\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        3430,
+        9814,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        99489,
+        145080,
+        151645,
+        198,
+        151644,
+        77091,
+        198,
+        39814,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        220,
+        1790,
+        198,
+        151645,
+        198,
+        151644,
+        77091,
+        198
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": ""
+        },
+        {
+          "role": "system",
+          "content": "Late system."
+        }
+      ],
+      "generation_prompt": false,
+      "text": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|im_end|>\n<|im_start|>system\nLate system.<|im_end|>\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        2610,
+        525,
+        1207,
+        16948,
+        11,
+        3465,
+        553,
+        54364,
+        14817,
+        13,
+        1446,
+        525,
+        264,
+        10950,
+        17847,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        151645,
+        198,
+        151644,
+        8948,
+        198,
+        61457,
+        1849,
+        13,
+        151645,
+        198
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": ""
+        },
+        {
+          "role": "system",
+          "content": "Late system."
+        }
+      ],
+      "generation_prompt": true,
+      "text": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|im_end|>\n<|im_start|>system\nLate system.<|im_end|>\n<|im_start|>assistant\n",
+      "ids": [
+        151644,
+        8948,
+        198,
+        2610,
+        525,
+        1207,
+        16948,
+        11,
+        3465,
+        553,
+        54364,
+        14817,
+        13,
+        1446,
+        525,
+        264,
+        10950,
+        17847,
+        13,
+        151645,
+        198,
+        151644,
+        872,
+        198,
+        151645,
+        198,
+        151644,
+        8948,
+        198,
+        61457,
+        1849,
+        13,
+        151645,
+        198,
+        151644,
+        77091,
+        198
+      ]
+    }
+  ]
+}

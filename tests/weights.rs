@@ -206,3 +206,28 @@ fn local_hashes_and_single_shard_identity_are_checked_without_network() {
     ));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn qwen_buffers_move_into_the_existing_decoder_with_bounded_capacity() {
+    use llm_inference::model::{Decoder, ModelError};
+    let c = config();
+    let (shapes, data) = contents(&c, Dtype::BF16);
+    let file = bytes(&shapes, &data, Dtype::BF16);
+    let loaded = decode_qwen(&file, c.clone()).unwrap();
+    let model = Decoder::from_qwen(loaded, 32).unwrap();
+    assert_eq!(model.config().hidden_dim, 4);
+    assert_eq!(model.forward(&[1, 2], false).unwrap().logits.len(), 4);
+    let loaded = decode_qwen(&file, c.clone()).unwrap();
+    assert!(matches!(
+        Decoder::from_qwen(loaded, 33),
+        Err(ModelError::ContextLimit)
+    ));
+    let mut loaded = decode_qwen(&file, c).unwrap();
+    loaded
+        .tensors
+        .remove("model.layers.0.self_attn.q_proj.bias");
+    assert!(matches!(
+        Decoder::from_qwen(loaded, 32),
+        Err(ModelError::Checkpoint(LoadError::MissingTensor(_)))
+    ));
+}

@@ -13,13 +13,16 @@ pub struct AttentionConfig {
     pub rope_base: f32,
 }
 
-/// All projection matrices are `[output,input]` row-major; biases are absent.
+/// All projection matrices are `[output,input]` row-major; optional biases are `[output]`.
 #[derive(Clone, Copy)]
 pub struct AttentionWeights<'a> {
     pub query: &'a [f32],
     pub key: &'a [f32],
     pub value: &'a [f32],
     pub output: &'a [f32],
+    pub query_bias: Option<&'a [f32]>,
+    pub key_bias: Option<&'a [f32]>,
+    pub value_bias: Option<&'a [f32]>,
 }
 
 /// Owned intermediate buffers for numerical inspection, not a persistent cache.
@@ -132,12 +135,42 @@ pub fn causal_attention(
         finite(buffer, values)?;
     }
 
+    for (buffer, bias, expected) in [
+        ("query_bias", weights.query_bias, h),
+        ("key_bias", weights.key_bias, kv_width),
+        ("value_bias", weights.value_bias, kv_width),
+    ] {
+        if let Some(values) = bias {
+            if values.len() != expected {
+                return Err(AttentionError::InvalidLength {
+                    buffer,
+                    expected,
+                    actual: values.len(),
+                });
+            }
+            finite(buffer, values)?;
+        }
+    }
+
     let mut query = vec![0.0; q_len];
     let mut key = vec![0.0; kv_len];
     let mut value = vec![0.0; kv_len];
     linear(x, weights.query, &mut query, tokens, h, h).map_err(AttentionError::Linear)?;
     linear(x, weights.key, &mut key, tokens, h, kv_width).map_err(AttentionError::Linear)?;
     linear(x, weights.value, &mut value, tokens, h, kv_width).map_err(AttentionError::Linear)?;
+    for (projected, bias, width) in [
+        (&mut query, weights.query_bias, h),
+        (&mut key, weights.key_bias, kv_width),
+        (&mut value, weights.value_bias, kv_width),
+    ] {
+        if let Some(bias) = bias {
+            for row in projected.chunks_exact_mut(width) {
+                for (out, &b) in row.iter_mut().zip(bias) {
+                    *out += b;
+                }
+            }
+        }
+    }
     finite("query", &query)?;
     finite("key", &key)?;
     finite("value", &value)?;

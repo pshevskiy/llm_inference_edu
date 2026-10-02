@@ -549,7 +549,68 @@ Y = [[-2, 4], [-2, 13]]
   fail explicitly. No real forward, tokenization, ANE or inference speed claim.
   **Next:** T06 under the owner's continued implementation/setup authorization.
 
-- [ ] **T06 — Tokenization and real-model parity.** Reuse tokenizers and implement only the selected template behavior, validated against its pinned reference. Test whitespace, Unicode, special tokens, and message boundaries; avoid double insertion of BOS/EOS. Compare selected intermediate values and teacher-forced logits on short prompts. Keep the reference small: no full `[long_sequence, vocabulary]` logits dump unless necessary.
+- [x] **T06 — Tokenization and real-model parity.** Reuse tokenizers and implement only the selected template behavior, validated against its pinned reference. Test whitespace, Unicode, special tokens, and message boundaries; avoid double insertion of BOS/EOS. Compare selected intermediate values and teacher-forced logits on short prompts. Keep the reference small: no full `[long_sequence, vocabulary]` logits dump unless necessary.
+
+**T06 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. GPT-6 Astra reviewed code,
+  negative numerical experiments and independent calibration. Initial missing
+  evidence-parent/finiteness issues were corrected; risky numerical candidates
+  removed. Final review had no remaining actionable findings; Astra independently
+  passed all 50 integration tests, formatting, Clippy and whitespace checks.
+- **Files:** `src/tokenizer.rs`, `src/model.rs`, `src/attention.rs`, `src/weights.rs`,
+  `src/lib.rs`, `tests/tokenizer.rs`, updated attention/loading tests,
+  `examples/qwen_parity.rs`, `fixtures/t06-tokenizer.json`, `reference/qwen.py`,
+  `reference/real-requirements.txt`, `reference/real-lock.txt`, reference README,
+  Cargo manifest/lock, `docs/lessons/06-qwen.md`, this record.
+- **Dependencies/setup:** Rust tokenizers 0.20.3 (default features disabled;
+  onig regex feature required by the established Qwen tokenizer), locked parser
+  dependencies. Approved ignored venv installed PyTorch 2.6.0, Transformers
+  4.46.3, Python tokenizers 0.20.3, NumPy 2.3.2, safetensors 0.6.2; complete
+  freeze saved. Production mathematics stays Rust; no PyTorch runtime dependency.
+- **Commands/results:** `python3 -m venv reference/.venv`,
+  `reference/.venv/bin/python -m pip install -r reference/real-requirements.txt`,
+  `reference/.venv/bin/python -m pip freeze`, `cargo fetch` passed.
+  `reference/.venv/bin/python reference/qwen.py --model models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed pinned CPU eager reference and self-calibration.
+  `cargo build --offline --release --example qwen_parity` then
+  `target/release/examples/qwen_parity models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed 7 tokenizer cases, 6 chat cases, 147 named-array comparisons including
+  all block outputs and 1215488 logits across three prompts, eight identical
+  teacher-forced argmax IDs. `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`,
+  `git diff --check` passed, 50 integration tests.
+- **Numerical gate/evidence:** initial full-model 1e-4 absolute/relative gate
+  failed. Compensation and direct RMSNorm experiments did not improve parity
+  and were removed. Independently, the SAME pinned FP32 reference token evaluated
+  alone vs in a full prefix differs by logits 6.55651093e-4, final norm
+  3.66401672e-3, layer-21 output 5.49316406e-3. Full reference envelope was
+  collected before freezing separate logits `atol=1e-3`, intermediate
+  `atol=5e-3`, both `rtol=1e-4`, finite-value and exact greedy gates, before
+  held-out Rust evaluation. Reference self-budget max 0.595481; final Rust
+  max budget 0.246822, max intermediate absolute 2.31933594e-3. Logit max
+  absolute across prompts 2.61306763e-4. Tiny/operator gates remain unchanged.
+  This is reference-based full-model calibration, not a performance-selection
+  tolerance increase. Initial failures remain documented.
+  Ignored logs: `docs/evidence/t06-setup.txt`, `t06-test.txt`,
+  `t06-parity-uncompensated.txt`, `t06-parity-compensated.txt`,
+  `t06-negative-accuracy-experiment.patch`, `t06-calibration.txt`,
+  `t06-reference-final.txt`, `t06-parity-final.txt`, and binary arrays under
+  `docs/evidence/t06-reference/`.
+- **Mechanism/resources:** move validated named allocations into existing
+  decoder; retain Q/K/V biases before RoPE, compact 14:2 GQA and one tied
+  embedding/output table. Hash-verified tokenizer/config assets; exact selected
+  plain-message template, no automatic BOS/EOS, no silent truncation. Normal
+  forward computes only last vocabulary row. Same M1 Pro host, one CPU reference
+  thread; no simultaneous full Python/Rust models or GPU/ANE claim.
+- **Trace/exercise:** `Hello!` IDs `[9707,0]` produce teacher-forced greedy IDs
+  `[271,358]`. First token sees only its biased V group. Draw boundaries for two
+  messages and the generation header; unsolved in lesson 06.
+- **Limitations:** numerical model prompts have 2–3 tokens; admission capped at
+  32, not a validated 2048 or advertised maximum. No generation-quality or speed
+  claim. Tools/template extensions deferred. Owner understanding pending.
+  **Next:** T07, authorized continuation with a bounded uncached CLI.
+
 - [ ] **T07 — Uncached generation CLI.** Implement a simple greedy loop that recomputes the prefix as a correctness baseline. Respect configured stop tokens and output/context limits. Print timing separately from generated text. Generate a short answer from the real checkpoint; document that uncached execution is intentionally inefficient.
 
 **Gate:** A real model runs through our Rust mathematics, and its behavior is validated against a pinned independent implementation. A model's advertised maximum context does not become our validated capacity.

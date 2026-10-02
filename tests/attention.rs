@@ -33,6 +33,9 @@ fn every_named_activation_matches_numpy() {
     let trace = causal_attention(
         &x,
         AttentionWeights {
+            query_bias: None,
+            key_bias: None,
+            value_bias: None,
             query: &q,
             key: &k,
             value: &v,
@@ -76,6 +79,9 @@ fn future_tokens_cannot_change_earlier_outputs() {
     let v = floats(&case["value"]);
     let o = floats(&case["output"]);
     let weights = AttentionWeights {
+        query_bias: None,
+        key_bias: None,
+        value_bias: None,
         query: &q,
         key: &k,
         value: &v,
@@ -114,6 +120,9 @@ fn every_query_head_uses_its_kv_group_without_duplication() {
     let trace = causal_attention(
         &x,
         AttentionWeights {
+            query_bias: None,
+            key_bias: None,
+            value_bias: None,
             query: &q,
             key: &k,
             value: &v,
@@ -134,6 +143,9 @@ fn invalid_config_lengths_and_numerics_return_errors() {
     let q = vec![0.0; 16];
     let kv = vec![0.0; 8];
     let weights = AttentionWeights {
+        query_bias: None,
+        key_bias: None,
+        value_bias: None,
         query: &q,
         key: &kv,
         value: &kv,
@@ -184,6 +196,9 @@ fn invalid_config_lengths_and_numerics_return_errors() {
         ));
     }
     let bad = AttentionWeights {
+        query_bias: None,
+        key_bias: None,
+        value_bias: None,
         query: &q[..15],
         ..weights
     };
@@ -196,6 +211,9 @@ fn invalid_config_lengths_and_numerics_return_errors() {
     ));
     let huge = vec![f32::MAX; 16];
     let weights = AttentionWeights {
+        query_bias: None,
+        key_bias: None,
+        value_bias: None,
         query: &huge,
         ..weights
     };
@@ -203,6 +221,62 @@ fn invalid_config_lengths_and_numerics_return_errors() {
         causal_attention(&[2.0; 4], weights, config(), 1, 0),
         Err(AttentionError::NonFinite {
             buffer: "query",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn qkv_biases_are_added_before_rotary_and_values_are_shared_by_group() {
+    let q = [0.0; 16];
+    let kv = [0.0; 8];
+    let output = [
+        1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
+    ];
+    let weights = AttentionWeights {
+        query: &q,
+        key: &kv,
+        value: &kv,
+        output: &output,
+        query_bias: Some(&[1., 2., 3., 4.]),
+        key_bias: Some(&[5., 6.]),
+        value_bias: Some(&[-2., 3.]),
+    };
+    let result = causal_attention(&[0.; 4], weights, config(), 1, 0).unwrap();
+    assert_eq!(result.query, [1., 2., 3., 4.]);
+    assert_eq!(result.key, [5., 6.]);
+    assert_eq!(result.value, [-2., 3.]);
+    assert_eq!(result.rotated_query, result.query);
+    assert_eq!(result.output, [-2., 3., -2., 3.]);
+    assert!(matches!(
+        causal_attention(
+            &[0.; 4],
+            AttentionWeights {
+                key_bias: Some(&[1.]),
+                ..weights
+            },
+            config(),
+            1,
+            0
+        ),
+        Err(AttentionError::InvalidLength {
+            buffer: "key_bias",
+            ..
+        })
+    ));
+    assert!(matches!(
+        causal_attention(
+            &[0.; 4],
+            AttentionWeights {
+                value_bias: Some(&[f32::NAN, 0.]),
+                ..weights
+            },
+            config(),
+            1,
+            0
+        ),
+        Err(AttentionError::NonFinite {
+            buffer: "value_bias",
             ..
         })
     ));
