@@ -2,10 +2,18 @@
 
 **Revision:** 0.2 — learning-first  
 **Prepared:** 2026-10-01  
-**Status:** Plan only. Every implementation ticket below is unstarted.  
+**Status:** Implementation in progress; see individual ticket records.
 **Primary hardware:** Mac M1 Pro, 16 GB unified memory.  
 **Later physical test device:** iPhone 14; iPad support follows device qualification.  
 **First ticket:** T00. Do not execute the whole roadmap in one run.
+
+**Current owner authorization — 2026-10-02:** Continue the roadmap sequentially,
+one commit per ticket, with a GPT-6 Astra review before each commit. Account for
+mechanical sympathy in layout and buffer ownership; performance claims still
+require measurements. This explicitly permits advancing through multiple
+tickets in this run. The owner also approved the pinned Qwen model download and
+isolated reference/export setup. Hardware qualification and owner-understanding
+gates still need their actual evidence; approval to proceed is not a passed gate.
 
 > Build an inference engine that its owner can understand, debug, optimize, and maintain without an AI coding agent. Performance is a goal to measure, not a property to assume.
 
@@ -249,7 +257,112 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M1 — A tiny full forward pass
 
-- [ ] **T01 — Numerical oracle and basic operations.** Add the minimal NumPy reference environment and fixed fixtures. Implement embedding lookup, residual addition, RMSNorm, SiLU, and numerically stable softmax. Test extreme logits, invalid token IDs, and zero-valued normalization input with epsilon. A masked softmax must reject an all-masked row rather than silently create NaNs.
+- [x] **T01 — Numerical oracle and basic operations.** Add the minimal NumPy reference environment and fixed fixtures. Implement embedding lookup, residual addition, RMSNorm, SiLU, and numerically stable softmax. Test extreme logits, invalid token IDs, and zero-valued normalization input with epsilon. A masked softmax must reject an all-masked row rather than silently create NaNs.
+
+**T01 completion record — 2026-10-01**
+
+- **Status:** implemented; owner review pending. T00's implementation and
+  passing checks satisfied the prerequisite. T02 and later tickets were not
+  started. This record supersedes the earlier plan-only status for T01.
+- **Files changed:** `src/lib.rs` exports the new `ops` module; added
+  `src/ops.rs`, `tests/basic_ops.rs`, `examples/basic_ops.rs`,
+  `fixtures/t01-inputs.json`, `fixtures/t01-expected.json`,
+  `reference/basic_ops.py`, `reference/requirements.txt`, `reference/README.md`,
+  and `docs/lessons/01-basic-ops.md`; updated `Cargo.toml`, `Cargo.lock`,
+  `.gitignore`, and this T01 record. The T00 scalar linear implementation and
+  its tests were preserved. Logs remain in ignored `docs/evidence/`.
+- **Dependencies:** no runtime dependencies. Test-only `serde_json=1.0.149`
+  parses the shared JSON fixtures, avoiding a custom parser. Its dependency
+  resolution is in `Cargo.lock`; existing cached crates were sufficient.
+  Optional oracle dependency: `numpy==2.3.2`. Python and NumPy were already
+  installed; no Python, toolchain, model, or ML runtime was installed.
+  `reference/README.md` documents isolated virtual-environment setup and
+  explicit fixture regeneration. No virtual environment was created in this run.
+- **Observed runtime:** arm64 Darwin 25.6.0, macOS 26.6.2 build 25G83;
+  MacBookPro18,3, Apple M1 Pro, 10 CPU cores, 16 GB memory. Homebrew Rust/Cargo
+  1.90.0, Python 3.12.8, NumPy 2.3.2. Commands: `uname -a`, `sw_vers`,
+  `/usr/sbin/system_profiler SPHardwareDataType` (selected hardware fields),
+  `rustc --version`, `cargo --version`, `python3 --version`, and
+  `python3 -c 'import numpy; print("NumPy", numpy.__version__)'`.
+  `system_profiler` reported the same hw.cpufamily warning as T00 while
+  supplying the listed facts. Local log: `docs/evidence/t01-host.txt`.
+- **Commands actually run and results:**
+
+  | Command | Actual result | Local log (ignored) |
+  |---|---|---|
+  | `python3 reference/basic_ops.py --write` | exit 0; generated the expected fixture using NumPy 2.3.2 | Saved oracle: `fixtures/t01-expected.json` |
+  | `python3 reference/basic_ops.py` | exit 0; byte-for-byte regeneration check passed | `docs/evidence/t01-oracle.txt` |
+  | `cargo fmt --all` | exit 0; formatted new code | No diagnostics |
+  | `cargo check --offline --lib` | exit 0 | No persisted log |
+  | `cargo test --offline --test basic_ops -- --nocapture` | exit 0; 20 T01 tests passed | No persisted log |
+  | `cargo fmt --all -- --check` | exit 0; no diagnostics | `docs/evidence/t01-fmt.txt` |
+  | `cargo clippy --all-targets -- -D warnings` | exit 0; no warnings | `docs/evidence/t01-clippy.txt` |
+  | `cargo test` | exit 0; 28 integration tests passed (20 T01 + 8 T00), 0 failed; 0 unit/doc tests | `docs/evidence/t01-test.txt` |
+  | `cargo test --test basic_ops -- --nocapture --test-threads=1` | exit 0; numerical evidence printed in serial order | `docs/evidence/t01-numerics.txt` |
+  | `cargo run --example basic_ops` | exit 0; displayed all five operations | `docs/evidence/t01-example.txt` |
+  | `cargo tree --edges normal` | only `llm_inference`; confirms no runtime dependencies | No persisted log |
+  | `git diff --check` | exit 0; no whitespace errors | No diagnostics |
+
+- **Independent numerical evidence:** both Rust and Python read the explicit
+  values in `fixtures/t01-inputs.json`; there is no shared RNG assumption.
+  NumPy evaluates direct equations in FP64 on FP32-rounded inputs, then saves
+  FP32-rounded expected values. Rust uses scalar FP32 arithmetic. Ordinary
+  Rust tests use saved fixtures without invoking Python or accessing a network.
+  The unchanged provisional gate is `abs_error <= 1e-5 + 1e-4 * abs(expected)`.
+  All fixture comparisons check finiteness. Relative error below means
+  `abs_error / max(abs(expected), 1e-5)`, using the absolute tolerance as the
+  scale floor. Row copies and exact residual sums additionally require equality.
+
+  | Fixture | Maximum absolute error | Maximum scale-aware relative error |
+  |---|---|---|
+  | Embedding | 0 | 0 |
+  | Residual addition | 0 | 0 |
+  | RMSNorm | `1.19209290e-7` | `8.58405969e-8` |
+  | SiLU | `6.30584309e-44` | `6.30584309e-39` |
+  | Softmax | 0 | 0 |
+  | Masked softmax | `5.96046448e-8` | `6.76712588e-8` |
+
+- **Mechanism and trace:** `embedding` copies table rows in token order;
+  residual addition combines matching elements; RMSNorm normalizes row
+  magnitude and applies per-feature weights; SiLU multiplies by a sigmoid;
+  softmax subtracts the maximum, exponentiates, and divides by the sum. All
+  shape/ID/numerical input validation occurs before writes. Row-major offsets
+  are `row * width + feature`. For logits `[1000,1001,1002]`, subtracting the
+  maximum gives `[-2,-1,0]`, exponentials approximately
+  `[0.13533528,0.36787944,1]`, sum `1.50321472`, and probabilities approximately
+  `[0.09003057,0.24472847,0.66524096]`. The example separately demonstrates
+  `[3,4]` → residual `[4,2]` → RMSNorm `[1.2649105,0.6324552]` →
+  SiLU `[0.98646605,0.41302234]` → probabilities `[0.6395574,0.3604426]`.
+- **Boundary tests:** repeated/ordered token IDs, late invalid IDs, short/long
+  buffers, zero dimensions and checked product overflow, zero RMSNorm rows,
+  invalid epsilon, large finite RMSNorm and SiLU input, extreme finite logits,
+  uniform/single-entry softmax, shift invariance, masked maxima, ignored masked
+  non-finite values, active non-finite rejection, and a late all-masked row.
+  Every tested rejection asserts unchanged output.
+- **Known limitations:** these are small operation fixtures, not a full decoder
+  or a pretrained-model qualification. Finite checks apply to RMSNorm inputs/
+  weights, SiLU inputs, and allowed softmax logits; embedding copies values and
+  residual addition retains ordinary FP32 semantics. Final RMSNorm weights or
+  residual sums can still overflow. The scaled RMSNorm equation avoids squared
+  input overflow; SiLU uses a sign-dependent exponential to avoid exponential
+  overflow. No performance, physical memory, model, ANE, GPU, or mobile tests
+  were run; those are outside T01. Owner understanding is not inferred from the
+  request to proceed. Changes were not committed or pushed in this run.
+- **One learning exercise:** for logits `[8,9,10]` and mask `[true,false,true]`,
+  write the maximum used, shifted allowed logits, exponentials, and normalized
+  output. Explain the middle probability. The exercise is unsolved; see
+  `docs/lessons/01-basic-ops.md` for the supporting explanation.
+- **Owner review:** pending.
+- **Astra review — 2026-10-02:** GPT-6 Astra found no actionable issues and
+  independently verified formatting, Clippy, all 28 integration tests, the
+  NumPy regeneration check, and whitespace checks. No review fixes were needed.
+- **Mechanical sympathy:** contiguous row access, no per-kernel allocation,
+  caller-owned outputs, and output reuse for softmax exponentials. Finite-input
+  validation and stable RMSNorm deliberately add passes; no speed claim is made.
+- **Commit preparation — 2026-10-02:** repeated ordinary checks and the NumPy
+  fixture check passed. The owner authorized one commit per ticket and
+  continuation to T02 after this review.
+- **Next ticket:** T02 (rotary positions), authorized next.
 - [ ] **T02 — Rotary positions.** Implement RoPE with explicit head dimensions, pairing convention, absolute positions, and configurable base. Test position zero, nonzero offsets, and agreement with the independent oracle. Preserve vector norm within declared floating-point tolerance.
 - [ ] **T03 — Causal attention and GQA.** Implement Q/K/V projections, per-head scoring scaled by inverse square root of head dimension, causal mask, softmax, value weighting, and output projection. First use transparent scalar code and small score buffers. Test that modifying a future token cannot change an earlier position's output; verify each query-to-KV-head mapping.
 - [ ] **T04 — Decoder and logits.** Compose the two-layer model, feed-forward block, residuals, final normalization, and output projection. Save named intermediate values for one fixture. Compare every block and final logits against NumPy. Add a tiny token-ID generation demo; synthetic weights are not expected to produce useful language.

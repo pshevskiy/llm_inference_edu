@@ -1,0 +1,33 @@
+{
+  "embedding": {
+    "vocab_size": 4,
+    "width": 3,
+    "token_ids": [2, 0, 2, 3],
+    "table": [0.5, -1, 2, 3, 0.25, -2, -1.5, 2.5, 0.75, 1, -0.5, 4]
+  },
+  "residual_add": {
+    "x": [0.5, -1, 2, 3.25, 0, 8],
+    "residual": [1, -2, -2, -0.25, 0.125, -8.5]
+  },
+  "rmsnorm": {
+    "rows": 2,
+    "width": 3,
+    "x": [1, -2, 3, 0, 0, 0],
+    "weight": [0.5, 1.5, -1],
+    "epsilon": 0.00001
+  },
+  "silu": {
+    "x": [-100, -4, -1, 0, 1, 4, 100]
+  },
+  "softmax": {
+    "rows": 2,
+    "width": 3,
+    "logits": [1000, 1001, 1002, -1000, -1000, -1000]
+  },
+  "masked_softmax": {
+    "rows": 3,
+    "width": 4,
+    "logits": [1000, 1001, 1002, 2000, 4, -5, 6, -7, -1, -1, -1, -1],
+    "mask": [true, true, true, false, false, true, false, true, true, false, true, true]
+  }
+}

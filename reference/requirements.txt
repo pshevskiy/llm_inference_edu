@@ -1,0 +1,2 @@
+# Optional numerical oracle only; Rust builds/tests do not need Python.
+numpy==2.3.2

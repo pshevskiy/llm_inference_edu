@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ops;
+
 /// Invalid dimensions or storage for a linear operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinearError {
