@@ -5,6 +5,7 @@ use llm_inference::weights::{Inventory, load_qwen};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::time::Instant;
 
 fn ids(value: &Value) -> Vec<usize> {
     value
@@ -73,7 +74,9 @@ fn main() {
     let mut accepted = true;
     for case in manifest["cases"].as_array().unwrap() {
         let tokens = ids(&case["ids"]);
+        let full_start = Instant::now();
         let output = model.forward(&tokens, true).unwrap();
+        let full_time = full_start.elapsed();
         let trace = output.trace.unwrap();
         let mut session = CachedSession::new(&model, 32).unwrap();
         for (position, &token) in tokens.iter().enumerate() {
@@ -91,6 +94,21 @@ fn main() {
             case["text"],
             tokens.len(),
             session.logical_bytes()
+        );
+        session.reset();
+        let serial_start = Instant::now();
+        assert_eq!(session.prefill(&tokens).unwrap(), output.logits);
+        let serial_time = serial_start.elapsed();
+        session.reset();
+        let chunk_start = Instant::now();
+        session.prefill(&tokens[..1]).unwrap();
+        assert_eq!(session.append(&tokens[1..]).unwrap(), output.logits);
+        println!(
+            "{} single-sample prefill seconds: uncached_with_inspection={:.6}, serial={:.6}, serial_chunk_calls={:.6}",
+            case["text"],
+            full_time.as_secs_f64(),
+            serial_time.as_secs_f64(),
+            chunk_start.elapsed().as_secs_f64()
         );
         for record in case["arrays"].as_array().unwrap() {
             let name = record["name"].as_str().unwrap();

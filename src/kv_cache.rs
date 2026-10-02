@@ -16,6 +16,8 @@ pub enum CacheError {
     Allocation,
     ResourceBudget,
     InvalidToken,
+    EmptyInput,
+    NotEmpty,
     Full,
     InvalidState,
     NonFinite,
@@ -104,6 +106,46 @@ impl<'a> CachedSession<'a> {
     pub fn reset(&mut self) {
         self.processed = 0;
         self.valid = true;
+    }
+    /// Initial serial prefill; requires an empty, valid session. This is not
+    /// optimized matrix-matrix prefill. Returns only the last position's logits.
+    pub fn prefill(&mut self, tokens: &[usize]) -> Result<Vec<f32>, CacheError> {
+        if !self.valid {
+            return Err(CacheError::InvalidState);
+        }
+        if self.processed != 0 {
+            return Err(CacheError::NotEmpty);
+        }
+        self.append(tokens)
+    }
+    /// Appends a chunk through serial one-token steps. All predictable input
+    /// errors are checked before any token write. Execution failures invalidate
+    /// the entire session, including any already processed part of this chunk.
+    pub fn append(&mut self, tokens: &[usize]) -> Result<Vec<f32>, CacheError> {
+        if !self.valid {
+            return Err(CacheError::InvalidState);
+        }
+        if tokens.is_empty() {
+            return Err(CacheError::EmptyInput);
+        }
+        if tokens
+            .iter()
+            .any(|&id| id >= self.model.config().vocab_size)
+        {
+            return Err(CacheError::InvalidToken);
+        }
+        if self
+            .processed
+            .checked_add(tokens.len())
+            .is_none_or(|n| n > self.capacity)
+        {
+            return Err(CacheError::Full);
+        }
+        let mut last = Vec::new();
+        for &token in tokens {
+            last = self.step(token)?;
+        }
+        Ok(last)
     }
     /// Appends exactly one evaluated token at the next absolute position.
     /// Predictable admission errors leave state unchanged. Any execution error

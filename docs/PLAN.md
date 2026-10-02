@@ -683,7 +683,43 @@ Y = [[-2, 4], [-2, 13]]
   Same M1 Pro CPU FP32. Initial 32-token admission, no long-context/device claim.
   **Next:** T09, authorized continued implementation.
 
-- [ ] **T09 — Prefill and incremental append.** Start with a correct token-by-token prefill using the cache. Then add small chunk processing only when that path passes. For a chunk starting at position `p`, query row `j` can attend only through position `p+j`. Verify one-shot, chunked, and token-by-token results match. Measure them separately; do not describe a serial prefill loop as optimized matrix-matrix prefill.
+- [x] **T09 — Prefill and incremental append.** Start with a correct token-by-token prefill using the cache. Then add small chunk processing only when that path passes. For a chunk starting at position `p`, query row `j` can attend only through position `p+j`. Verify one-shot, chunked, and token-by-token results match. Measure them separately; do not describe a serial prefill loop as optimized matrix-matrix prefill.
+
+**T09 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. Astra found no actionable
+  findings and independently passed three prefill tests, fmt and Clippy.
+- **Files:** `src/kv_cache.rs`, `tests/prefill.rs`, `examples/prefill.rs`,
+  `examples/qwen_parity.rs`, `docs/lessons/09-prefill.md`, this record.
+- **Commands/results:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`,
+  `git diff --check` passed; 62 integration tests, 3 new.
+  `cargo run --offline --release --example prefill` passed exact parity for all
+  final logits across one-shot, serial chunk calls and explicit token steps.
+  `cargo build --offline --release --example qwen_parity` and
+  `target/release/examples/qwen_parity models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed real prefill/chunk/uncached exact equality for three prompts and prior
+  independent reference gates. Local ignored logs `docs/evidence/t09-test.txt`,
+  `t09-prefill.txt`, `t09-parity.txt`.
+- **Mechanism/trace:** preflight all chunk IDs and capacity before writes; serial
+  step evaluates local row j at absolute p+j. Prefill `[1,5,7]`, append `[41,53]`
+  commits five evaluated positions and matches the full prefix. Any partial
+  execution failure invalidates the whole session; admission errors preserve it.
+- **Measurements:** tiny full-prefix 97 us, serial prefill 108.541 us, chunk calls
+  104.708 us, explicit steps 102.208 us. Qwen Hello! (2 tokens): uncached with
+  inspection 0.836729 s, serial 0.815178 s, serial chunk calls 0.812071 s.
+  Three-token cases about 1.22 s serial; exact values in raw evidence. Single
+  bounded demonstration samples; inspection overhead differs. These do not
+  establish speed improvements. No sustained benchmark or physical memory test.
+- **Mechanical sympathy:** compact fixed KV reused; intermediate vocabulary
+  rows dropped. Per-step scratch remains allocating. Chunk API is explicitly
+  serial, not optimized matrix-matrix prefill. Same recorded M1 Pro CPU host.
+- **Exercise:** bound the third query of a chunk starting at absolute 5;
+  unsolved in lesson 09.
+- **Limitations:** no vectorized/batched prefill, generation policy or stream.
+  **Next:** T10, continued authorization; performance opt-in question pending
+  for sustained T11–T16 tests, independent correctness work continues.
+
 - [ ] **T10 — Generation state and sampling.** Separate model stepping from sampler policy. Add deterministic greedy behavior, seeded temperature sampling, and one filtering strategy only when needed. Validate stop conditions, bad parameters, and non-finite logits. Preserve token IDs while decoding text without corrupted partial Unicode. Test cancellation and the sampled-but-not-yet-cached token case.
 
 **Gate:** Correct cache reuse, no hidden truncation, and reproducible continuation. Restarting the model for every request or tool return fails this milestone.
