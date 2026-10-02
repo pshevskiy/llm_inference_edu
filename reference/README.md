@@ -31,9 +31,13 @@ reference/.venv/bin/python reference/basic_ops.py --write
 ```
 
 Inspect any numerical difference before accepting a regenerated fixture. Both
-JSON files are checked in. Ordinary Rust tests read those files through a
-test-only `serde_json` dependency and require neither Python nor network access
+JSON files are checked in. Ordinary Rust tests read those files through
+`serde_json` and require neither Python nor network access
 once Cargo's locked test dependencies are available.
+
+T01 introduced JSON parsing only for tests. T04 also uses Serde/JSON to read
+the synthetic model fixture in its runnable example, so those small parsers
+are now runtime dependencies. This is not a pretrained-checkpoint reader.
 
 The comparison uses the plan's provisional `atol=1e-5`, `rtol=1e-4`:
 

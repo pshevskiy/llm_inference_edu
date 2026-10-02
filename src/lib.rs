@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod attention;
+pub mod model;
 pub mod ops;
 pub mod rope;
 

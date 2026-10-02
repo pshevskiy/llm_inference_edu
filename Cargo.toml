@@ -5,7 +5,5 @@ edition = "2024"
 rust-version = "1.90"
 
 [dependencies]
-
-[dev-dependencies]
-# Only the tests parse the shared numerical fixtures; the library needs no crates.
 serde_json = "=1.0.149"
+serde = { version = "=1.0.228", features = ["derive"] }

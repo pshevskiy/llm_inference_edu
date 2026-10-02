@@ -444,7 +444,58 @@ Y = [[-2, 4], [-2, 13]]
   memory-footprint, or hardware-acceleration claim. Same observed T01 runtime.
 - **Next:** T04, authorized after this reviewed ticket's commit.
 
-- [ ] **T04 — Decoder and logits.** Compose the two-layer model, feed-forward block, residuals, final normalization, and output projection. Save named intermediate values for one fixture. Compare every block and final logits against NumPy. Add a tiny token-ID generation demo; synthetic weights are not expected to produce useful language.
+- [x] **T04 — Decoder and logits.** Compose the two-layer model, feed-forward block, residuals, final normalization, and output projection. Save named intermediate values for one fixture. Compare every block and final logits against NumPy. Add a tiny token-ID generation demo; synthetic weights are not expected to produce useful language.
+
+**T04 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review/understanding pending. GPT-6 Astra found
+  no actionable issues and independently passed all 42 integration tests,
+  formatting, Clippy, the NumPy fixture check, and the token-ID example.
+- **Files:** `src/model.rs`, `src/lib.rs`, `tests/model.rs`,
+  `examples/tiny_decoder.rs`, `fixtures/tiny-model.json`, `fixtures/t04-inputs.json`,
+  `fixtures/t04-expected.json`, `reference/make_tiny_fixture.py`,
+  `reference/decoder.py`, `reference/README.md`, `docs/lessons/04-decoder.md`,
+  `Cargo.toml`, `Cargo.lock`, and this record.
+- **Dependencies:** Serde 1.0.228 with derive, and serde_json 1.0.149, parse the
+  fixed synthetic model/config. JSON moved from test-only to runtime use for
+  the runnable example. Six small locked derive dependencies were fetched after
+  an offline attempt reported proc-macro2 unavailable; no ML runtime was installed.
+- **Commands/results:** `python3 reference/make_tiny_fixture.py` serialized
+  explicit formula-generated weights; `python3 reference/decoder.py --write`
+  saved the independent FP64-equation reference; `python3 reference/decoder.py`
+  verified it. `cargo fmt --all -- --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`, and
+  `git diff --check` passed. 42 integration tests (3 T04) passed; ignored log
+  `docs/evidence/t04-test.txt`. `cargo test --test model -- --nocapture` compared
+  all 35 named arrays with unchanged tolerances. Largest absolute error was
+  `1.43051147e-6` (first layer's SwiGLU product); logits had max absolute
+  error `5.81145287e-7` and scale-aware relative error `4.55949375e-5`.
+  The largest relative error in any intermediate was `3.41407052e-4` near
+  zero; it passed the existing combined absolute/relative budget.
+- **Example:** `cargo run --example tiny_decoder` passed and produced greedy
+  IDs `41,53,41,50` from initial IDs `[1,5,7]`. Four bounded full-prefix steps;
+  no language-quality claim. Equal logits choose the lowest token ID.
+- **Mechanism:** embedding → two pre-normalized causal GQA/RoPE blocks with
+  attention residual and RMSNorm/SwiGLU/down-projection residual → final RMSNorm
+  → tied embedding/output projection. Synthetic weights have no biases; real
+  Qwen architecture is not yet qualified. Normal mode returns only last-position
+  logits and discards per-block diagnostic activations. Optional inspection is
+  limited to 32 tokens and retains all teacher-forced logits and named arrays.
+- **Mechanical sympathy/resources:** compact K/V and shared tied weights;
+  ordinary mode avoids retaining all layers or a T*vocabulary logit matrix.
+  Scratch still allocates per forward/layer and kernels repeat validation; no
+  speed claim. `wc -c` reported JSON file sizes 435741 bytes (weights) and
+  106024 bytes (reference); these are file sizes, not resident memory. Same
+  observed T01 runtime; physical memory/performance tests not run.
+- **Trace:** token zero's attention context is its group's first V row; residual
+  addition preserves the embedding path before SwiGLU. Tests compare prefixes
+  against the same teacher-forced rows and ensure future-token changes cannot
+  affect earlier logits. Normal/inspection last logits match exactly.
+- **Exercise:** draw both residual paths and label hidden/KV/feed-forward
+  widths for one block. Unsolved; see `docs/lessons/04-decoder.md`.
+- **Next:** T05, under the owner's explicit continued-roadmap/download approval.
+  Numerical forward gate passed; owner understanding remains pending, not assumed.
+
 
 **Gate:** One complete token-to-logit trace is understandable without an external model runtime. The readable scalar implementation remains the correctness anchor after optimization.
 
