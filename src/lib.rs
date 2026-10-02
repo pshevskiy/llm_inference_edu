@@ -4,6 +4,7 @@
 
 pub mod attention;
 pub mod generation;
+pub mod kv_cache;
 pub mod model;
 pub mod ops;
 pub mod rope;

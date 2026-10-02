@@ -649,7 +649,40 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M3 — Cached, incremental inference
 
-- [ ] **T08 — KV storage and one-token decode.** Implement explicit cache capacity and processed-position accounting. Compare cached and uncached logits at every teacher-forced step. Test exact capacity, one-token overflow, reset, repeated decode, and GQA. Use the invariants in Section 4.4.
+- [x] **T08 — KV storage and one-token decode.** Implement explicit cache capacity and processed-position accounting. Compare cached and uncached logits at every teacher-forced step. Test exact capacity, one-token overflow, reset, repeated decode, and GQA. Use the invariants in Section 4.4.
+
+**T08 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. Astra found no actionable
+  findings and independently passed the initial five cache tests, fmt and
+  Clippy. Parent added/passed a sixth cache-allocation admission test.
+- **Files:** `src/kv_cache.rs`, `src/model.rs`, `src/lib.rs`, `tests/kv_cache.rs`,
+  `examples/qwen_parity.rs`, `docs/lessons/08-cache.md`, this record.
+  No dependencies added.
+- **Commands/results:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`,
+  `git diff --check` passed: 59 integration tests, 6 cache tests.
+  `cargo build --offline --release --example qwen_parity` then
+  `target/release/examples/qwen_parity models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775`
+  passed every cached/uncached Qwen position exactly (eight positions across
+  three short prompts), alongside all 147 independent reference-array checks.
+  Logs: ignored `docs/evidence/t08-test.txt`, `docs/evidence/t08-parity.txt`.
+- **Mechanism/trace:** model-borrowed fixed K/V arrays `[kv_head,position,D]`,
+  absolute rotated K and unrotated V, compact GQA. A token commits processed+1
+  only after every layer/logit succeeds. Invalid ID/full capacity preserve
+  prefix; partial execution failure invalidates all layers until reset.
+  Step at position zero commits 1; sampling alone leaves it 1; evaluating the
+  emitted token commits 2. Reset reuses storage and hides stale entries.
+- **Resources/mechanical sympathy:** head/position feature spans contiguous;
+  fixed KV allocation, no per-query duplication. Checked logical cache-only
+  admission 128 MiB; Qwen capacity 32 uses 786432 logical bytes. These are not
+  physical measurements. Per-step scratch still allocates, no speed claim.
+- **Exercise:** compute head-1/position-3/feature-2 offset at capacity 8, D=4;
+  list allowed positions. Unsolved in lesson 08.
+- **Limitations:** one-token step only; no prefill API, history policy or sampling.
+  Same M1 Pro CPU FP32. Initial 32-token admission, no long-context/device claim.
+  **Next:** T09, authorized continued implementation.
+
 - [ ] **T09 — Prefill and incremental append.** Start with a correct token-by-token prefill using the cache. Then add small chunk processing only when that path passes. For a chunk starting at position `p`, query row `j` can attend only through position `p+j`. Verify one-shot, chunked, and token-by-token results match. Measure them separately; do not describe a serial prefill loop as optimized matrix-matrix prefill.
 - [ ] **T10 — Generation state and sampling.** Separate model stepping from sampler policy. Add deterministic greedy behavior, seeded temperature sampling, and one filtering strategy only when needed. Validate stop conditions, bad parameters, and non-finite logits. Preserve token IDs while decoding text without corrupted partial Unicode. Test cancellation and the sampled-but-not-yet-cached token case.
 

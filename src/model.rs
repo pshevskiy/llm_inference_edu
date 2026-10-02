@@ -61,7 +61,7 @@ struct ModelFile {
 /// tied to the embedding table, with no duplicate storage. Q/K/V biases are optional.
 pub struct Decoder {
     config: ModelConfig,
-    weights: ModelWeights,
+    pub(crate) weights: ModelWeights,
 }
 
 pub struct LayerTrace {

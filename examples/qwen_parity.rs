@@ -1,3 +1,4 @@
+use llm_inference::kv_cache::CachedSession;
 use llm_inference::model::Decoder;
 use llm_inference::tokenizer::{ChatTokenizer, Message, Role, render_chat};
 use llm_inference::weights::{Inventory, load_qwen};
@@ -74,6 +75,23 @@ fn main() {
         let tokens = ids(&case["ids"]);
         let output = model.forward(&tokens, true).unwrap();
         let trace = output.trace.unwrap();
+        let mut session = CachedSession::new(&model, 32).unwrap();
+        for (position, &token) in tokens.iter().enumerate() {
+            let cached = session.step(token).unwrap();
+            assert_eq!(
+                cached,
+                trace.logits[position * model.config().vocab_size
+                    ..(position + 1) * model.config().vocab_size],
+                "cached position {position}"
+            );
+            assert_eq!(session.processed(), position + 1);
+        }
+        println!(
+            "{} cached/uncached: {} positions exactly equal; logical KV {} bytes",
+            case["text"],
+            tokens.len(),
+            session.logical_bytes()
+        );
         for record in case["arrays"].as_array().unwrap() {
             let name = record["name"].as_str().unwrap();
             let atol = if name == "logits" {
