@@ -4,6 +4,38 @@ use crate::model::Decoder;
 use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu, softmax};
 use crate::rope::{RopeError, rope};
 use crate::{LinearError, linear};
+use serde::Serialize;
+use std::time::Instant;
+
+/// Diagnostic scopes include operator validation/allocation and are excluded
+/// from ordinary benchmark repetitions. Units are monotonic wall-clock ns.
+#[derive(Default, Debug, Serialize)]
+pub struct LayerProfile {
+    pub attention_norm_ns: u128,
+    pub qkv_ns: u128,
+    pub rope_ns: u128,
+    pub attention_mix_ns: u128,
+    pub attention_output_ns: u128,
+    pub residual_norm_ns: u128,
+    pub gate_up_ns: u128,
+    pub silu_product_ns: u128,
+    pub down_residual_ns: u128,
+    pub total_ns: u128,
+}
+#[derive(Default, Debug, Serialize)]
+pub struct StepProfile {
+    pub embedding_ns: u128,
+    pub layers: Vec<LayerProfile>,
+    pub final_norm_ns: u128,
+    pub logits_ns: u128,
+    pub total_ns: u128,
+}
+fn begin(enabled: bool) -> Option<Instant> {
+    enabled.then(Instant::now)
+}
+fn elapsed(start: Option<Instant>) -> u128 {
+    start.map_or(0, |s| s.elapsed().as_nanos())
+}
 
 struct LayerCache {
     key: Vec<f32>,
@@ -96,6 +128,9 @@ impl<'a> CachedSession<'a> {
     pub fn capacity(&self) -> usize {
         self.capacity
     }
+    pub(crate) fn model_config(&self) -> crate::model::ModelConfig {
+        self.model.config()
+    }
     pub fn is_valid(&self) -> bool {
         self.valid
     }
@@ -151,6 +186,20 @@ impl<'a> CachedSession<'a> {
     /// Predictable admission errors leave state unchanged. Any execution error
     /// invalidates all layer prefixes; reset is required before another step.
     pub fn step(&mut self, token: usize) -> Result<Vec<f32>, CacheError> {
+        self.step_inner(token, None)
+    }
+    pub fn step_profiled(&mut self, token: usize) -> Result<(Vec<f32>, StepProfile), CacheError> {
+        let start = Instant::now();
+        let mut profile = StepProfile::default();
+        let logits = self.step_inner(token, Some(&mut profile))?;
+        profile.total_ns = start.elapsed().as_nanos();
+        Ok((logits, profile))
+    }
+    fn step_inner(
+        &mut self,
+        token: usize,
+        profile: Option<&mut StepProfile>,
+    ) -> Result<Vec<f32>, CacheError> {
         if !self.valid {
             return Err(CacheError::InvalidState);
         }
@@ -160,7 +209,7 @@ impl<'a> CachedSession<'a> {
         if self.processed == self.capacity {
             return Err(CacheError::Full);
         }
-        match self.forward(token) {
+        match self.forward(token, profile) {
             Ok(logits) => {
                 self.processed += 1;
                 Ok(logits)
@@ -172,14 +221,26 @@ impl<'a> CachedSession<'a> {
             }
         }
     }
-    fn forward(&mut self, token: usize) -> Result<Vec<f32>, CacheError> {
+    fn forward(
+        &mut self,
+        token: usize,
+        mut profile: Option<&mut StepProfile>,
+    ) -> Result<Vec<f32>, CacheError> {
+        let diagnostic = profile.is_some();
         let c = self.model.config();
         let h = c.hidden_dim;
         let weights = &self.model.weights;
+        let clock = begin(diagnostic);
         let mut hidden = vec![0.0; h];
         embedding(&[token], &weights.embedding, &mut hidden, c.vocab_size, h)
             .map_err(CacheError::Operation)?;
+        if let Some(p) = profile.as_deref_mut() {
+            p.embedding_ns = elapsed(clock);
+        }
         for (layer, cache) in weights.layers.iter().zip(&mut self.layers) {
+            let total = begin(diagnostic);
+            let mut detail = LayerProfile::default();
+            let clock = begin(diagnostic);
             let mut norm = vec![0.0; h];
             rmsnorm(
                 &hidden,
@@ -190,6 +251,7 @@ impl<'a> CachedSession<'a> {
                 c.norm_epsilon,
             )
             .map_err(CacheError::Operation)?;
+            detail.attention_norm_ns = elapsed(clock);
             let attention = attend_one(
                 &norm,
                 AttentionWeights {
@@ -211,27 +273,41 @@ impl<'a> CachedSession<'a> {
                 cache,
                 self.processed,
                 self.capacity,
+                diagnostic.then_some(&mut detail),
             )?;
+            let clock = begin(diagnostic);
             let mut residual = vec![0.0; h];
             residual_add(&hidden, &attention, &mut residual).map_err(CacheError::Operation)?;
             rmsnorm(&residual, &layer.ffn_norm, &mut norm, 1, h, c.norm_epsilon)
                 .map_err(CacheError::Operation)?;
+            detail.residual_norm_ns = elapsed(clock);
+            let clock = begin(diagnostic);
             let mut gate = vec![0.0; c.ff_dim];
             let mut up = vec![0.0; c.ff_dim];
             linear(&norm, &layer.gate, &mut gate, 1, h, c.ff_dim).map_err(CacheError::Linear)?;
             linear(&norm, &layer.up, &mut up, 1, h, c.ff_dim).map_err(CacheError::Linear)?;
+            detail.gate_up_ns = elapsed(clock);
+            let clock = begin(diagnostic);
             let mut activated = vec![0.0; c.ff_dim];
             silu(&gate, &mut activated).map_err(CacheError::Operation)?;
             for (product, &u) in activated.iter_mut().zip(&up) {
                 *product *= u;
             }
             finite(&activated)?;
+            detail.silu_product_ns = elapsed(clock);
+            let clock = begin(diagnostic);
             let mut ffn = vec![0.0; h];
             linear(&activated, &layer.down, &mut ffn, 1, c.ff_dim, h)
                 .map_err(CacheError::Linear)?;
             residual_add(&residual, &ffn, &mut hidden).map_err(CacheError::Operation)?;
             finite(&hidden)?;
+            detail.down_residual_ns = elapsed(clock);
+            detail.total_ns = elapsed(total);
+            if let Some(p) = profile.as_deref_mut() {
+                p.layers.push(detail);
+            }
         }
+        let clock = begin(diagnostic);
         let mut norm = vec![0.0; h];
         rmsnorm(
             &hidden,
@@ -242,10 +318,17 @@ impl<'a> CachedSession<'a> {
             c.norm_epsilon,
         )
         .map_err(CacheError::Operation)?;
+        if let Some(p) = profile.as_deref_mut() {
+            p.final_norm_ns = elapsed(clock);
+        }
+        let clock = begin(diagnostic);
         let mut logits = vec![0.0; c.vocab_size];
         linear(&norm, &weights.embedding, &mut logits, 1, h, c.vocab_size)
             .map_err(CacheError::Linear)?;
         finite(&logits)?;
+        if let Some(p) = profile {
+            p.logits_ns = elapsed(clock);
+        }
         Ok(logits)
     }
 }
@@ -259,7 +342,10 @@ fn attend_one(
     cache: &mut LayerCache,
     position: usize,
     capacity: usize,
+    mut profile: Option<&mut LayerProfile>,
 ) -> Result<Vec<f32>, CacheError> {
+    let diagnostic = profile.is_some();
+    let clock = begin(diagnostic);
     let h = c.hidden_dim;
     let d = c.head_dim;
     let kv = c.kv_heads * d;
@@ -281,6 +367,10 @@ fn attend_one(
         }
         finite(values)?;
     }
+    if let Some(p) = profile.as_deref_mut() {
+        p.qkv_ns = elapsed(clock);
+    }
+    let clock = begin(diagnostic);
     let mut rotated_query = vec![0.0; h];
     let mut rotated_key = vec![0.0; kv];
     rope(
@@ -305,6 +395,10 @@ fn attend_one(
     .map_err(CacheError::Rotary)?;
     finite(&rotated_query)?;
     finite(&rotated_key)?;
+    if let Some(p) = profile.as_deref_mut() {
+        p.rope_ns = elapsed(clock);
+    }
+    let clock = begin(diagnostic);
     for head in 0..c.kv_heads {
         let offset = (head * capacity + position) * d;
         cache.key[offset..offset + d].copy_from_slice(&rotated_key[head * d..(head + 1) * d]);
@@ -332,8 +426,15 @@ fn attend_one(
         }
     }
     finite(&context)?;
+    if let Some(p) = profile.as_deref_mut() {
+        p.attention_mix_ns = elapsed(clock);
+    }
+    let clock = begin(diagnostic);
     let mut output = vec![0.0; h];
     linear(&context, weights.output, &mut output, 1, h, h).map_err(CacheError::Linear)?;
     finite(&output)?;
+    if let Some(p) = profile {
+        p.attention_output_ns = elapsed(clock);
+    }
     Ok(output)
 }

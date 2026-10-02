@@ -773,7 +773,53 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M4 — Explain and improve the measured bottleneck
 
-- [ ] **T11 — Reproducible benchmark harness.** Implement Section 6 before changing performance-critical code. Record load, prefill, steady decode, continuation, and memory separately. Add layer/operator timing in diagnostic mode. Preserve raw results and configuration identity.
+- [x] **T11 — Reproducible benchmark harness.** Implement Section 6 before changing performance-critical code. Record load, prefill, steady decode, continuation, and memory separately. Add layer/operator timing in diagnostic mode. Preserve raw results and configuration identity.
+  **Implemented 2026-10-03; owner review pending.** Added `src/benchmark.rs`,
+  `examples/benchmark.rs`, `benchmarks/{tiny,qwen-short}.json`, README,
+  `tests/benchmark.rs`, lesson 11; cached diagnostic scopes and checked weight
+  payload accounting. No dependencies added. Teacher-forced and EOS-respecting
+  greedy modes are separate; continuation reserves/evaluates the pending emitted
+  token and records a new pending response. Admission reserves the whole history,
+  including that final response, within the qualified 32-token model capacity.
+  Raw JSONL, median/min/max/MAD, workload/model/lock hashes, runtime source/compiler
+  snapshots and actual executable hash are preserved. Metadata precedes timed
+  repetitions and identifies incomplete runs. Profiling stays outside timings.
+
+  **Checks:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  passed (76 integration tests + 2 unit tests). Release example build passed.
+  Evidence: ignored `docs/evidence/t11-{fmt,clippy,test}.txt`.
+  `target/release/examples/benchmark tiny fixtures/tiny-model.json
+  benchmarks/tiny.json docs/evidence/t11-tiny-final` ran three warmups/ten
+  repetitions per mode: 20 raw samples. Teacher-forced prefill median 0.2060205 ms;
+  decode median 67383.946 tokens/s, greedy TTFT median 0.205688 ms. Tiny throughput
+  is a synthetic observation, not representative pretrained throughput.
+
+  **Bounded real smoke:** `/usr/bin/time -l target/release/examples/benchmark qwen
+  models/qwen2.5-0.5b-instruct/7ae557604adf67be50417f59c2c2f167def9a775
+  benchmarks/qwen-short.json docs/evidence/t11-qwen-final --single` passed,
+  13.70 s process time. One sample per mode, no dispersion/speedup claim:
+  fixed decode 2.450703 tokens/s; greedy TTFT 812.588958 ms. Actual M1 Pro,
+  MacBookPro18,3, 16 GB, macOS 26.6.2/25G83, AC power, one numerical thread,
+  Rust 1.90.0. Peak RSS 2,976,825,344 bytes; macOS peak footprint 3,058,551,544
+  bytes, process-wide including load. Logical weights 1,976,131,072 bytes,
+  KV 786,432 bytes; file bytes and logical scratch are separate metadata fields.
+  Evidence: ignored `docs/evidence/t11-{tiny-final,qwen-final}/` and
+  `t11-qwen-final-process.txt`; earlier diagnostic runs retained separately.
+
+  **Limitations:** uncontrolled filesystem cache, initial load is not certified
+  cold; prefill is serial; larger proposed workloads are not yet admitted.
+  Sandboxed tiny RSS snapshots unavailable; Qwen point snapshots available under
+  approved system-counter access. Thermal command returned errors, so thermal
+  status unavailable; energy unavailable, no UI rendering measurement. Sustained
+  real repetitions remain **not run: explicit opt-in pending**, follow-up command
+  in `benchmarks/README.md` (remove `--single` only after approval). Core ML/ANE,
+  iPhone and external baselines not run here. Astra reviewed the implementation,
+  corrected scratch lifetime/timing/admission and reproducibility findings; final
+  review found no remaining actionable findings. Metadata updates use a same-directory
+  temporary file and rename to preserve identity on partial writes. Lesson 11 contains trace and unsolved exercise.
+  **Next:** T12 allocation audit and reusable scratch, without kernel changes.
+
 - [ ] **T12 — Scratch reuse and allocation audit.** Use measured allocation profiles to remove redundant copies and per-step large allocations. Preallocate attention workspace to the admitted capacity. Keep diagnostic tracing out of timed paths. Test repeated generation/reset and failure cleanup.
 - [ ] **T13 — One CPU-kernel improvement.** Select one expensive operation from the profile. First investigate loop ordering/blocking and compiler output; then one explicit vectorized or threaded implementation where justified. Keep a callable scalar reference. Benchmark realistic model shapes, not only convenient square matrices. Do not add both threading and SIMD in one unexplained change.
 - [ ] **T14 — Prefill versus decode experiment.** Compare matrix-vector decode and chunked matrix-matrix prefill, varying the chunk size within the memory budget. An Accelerate/BLAS comparison may be a labeled development benchmark, not a replacement for the learning implementation. Record where data movement, arithmetic, or launch/setup cost appears to dominate.

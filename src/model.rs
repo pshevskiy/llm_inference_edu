@@ -5,9 +5,9 @@ use crate::attention::{
 };
 use crate::ops::{OpError, embedding, residual_add, rmsnorm, silu};
 use crate::{LinearError, linear};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
     pub vocab_size: usize,
@@ -298,6 +298,42 @@ impl Decoder {
 
     pub fn config(&self) -> ModelConfig {
         self.config
+    }
+
+    /// Logical FP32 payload only: allocator overhead and resident pages differ.
+    pub fn logical_weight_bytes(&self) -> Result<usize, ModelError> {
+        let mut elements = self
+            .weights
+            .embedding
+            .len()
+            .checked_add(self.weights.final_norm.len())
+            .ok_or(ModelError::DimensionOverflow)?;
+        for layer in &self.weights.layers {
+            for values in [
+                &layer.attention_norm,
+                &layer.query,
+                &layer.key,
+                &layer.value,
+                &layer.attention_output,
+                &layer.ffn_norm,
+                &layer.gate,
+                &layer.up,
+                &layer.down,
+            ] {
+                elements = elements
+                    .checked_add(values.len())
+                    .ok_or(ModelError::DimensionOverflow)?;
+            }
+            for values in [&layer.query_bias, &layer.key_bias, &layer.value_bias]
+                .into_iter()
+                .flatten()
+            {
+                elements = elements
+                    .checked_add(values.len())
+                    .ok_or(ModelError::DimensionOverflow)?;
+            }
+        }
+        product(elements, size_of::<f32>())
     }
 
     /// Full-prefix scalar forward. `inspect=true` retains named activations and

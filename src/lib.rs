@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod attention;
+pub mod benchmark;
 pub mod generation;
 pub mod kv_cache;
 pub mod model;
