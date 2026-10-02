@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod attention;
 pub mod ops;
 pub mod rope;
 

@@ -404,7 +404,46 @@ Y = [[-2, 4], [-2, 13]]
   M1 Pro/Rust 1.90.0/Python 3.12.8/NumPy 2.3.2 recorded in T01.
 - **Next:** T03, after Astra review and this ticket's commit.
 
-- [ ] **T03 — Causal attention and GQA.** Implement Q/K/V projections, per-head scoring scaled by inverse square root of head dimension, causal mask, softmax, value weighting, and output projection. First use transparent scalar code and small score buffers. Test that modifying a future token cannot change an earlier position's output; verify each query-to-KV-head mapping.
+- [x] **T03 — Causal attention and GQA.** Implement Q/K/V projections, per-head scoring scaled by inverse square root of head dimension, causal mask, softmax, value weighting, and output projection. First use transparent scalar code and small score buffers. Test that modifying a future token cannot change an earlier position's output; verify each query-to-KV-head mapping.
+
+**T03 completion record — 2026-10-02**
+
+- **Status:** implemented; owner review pending. GPT-6 Astra found no actionable
+  issues and independently passed all 39 integration tests, formatting, Clippy,
+  and the NumPy fixture check before commit.
+- **Files:** `src/attention.rs`, `src/lib.rs`, `tests/attention.rs`,
+  `fixtures/t03-inputs.json`, `fixtures/t03-expected.json`,
+  `reference/attention.py`, `docs/lessons/03-attention.md`, and this record.
+  No new dependencies. Projection biases are absent in this synthetic slice;
+  real-checkpoint semantics remain a separate qualification.
+- **Commands/results:** `python3 reference/attention.py --write`, followed by
+  `python3 reference/attention.py`, passed generation/verification.
+  `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test`, and `git diff --check` passed. 39 integration tests (4 T03)
+  passed; ignored log `docs/evidence/t03-test.txt`. Targeted
+  `cargo test --test attention -- --nocapture` compared every named intermediate.
+  Q/K/V matched exactly. Rotated Q/K, context, and output had max absolute error
+  `1.19209290e-7`; largest scale-aware relative error was `9.63204570e-7`.
+  Tolerances remain `atol=1e-5, rtol=1e-4`.
+- **Trace/layout:** Q/context are `[tokens,query_heads,head_dim]`, K/V use
+  compact kv_heads. For 4 query heads and 2 KV heads, mapping is `[0,0,1,1]`.
+  A score is the rotated Q/K dot product divided by sqrt(head_dim). At token
+  zero the one-entry probability is exactly 1, so context copies its group's
+  value row. A prefix slice enforces causality; altering the third token leaves
+  the first two outputs exactly unchanged.
+- **Mechanical sympathy:** consecutive features in each dot/value loop; one
+  score/probability row reused across tokens and heads; no full T*T score
+  allocation or duplicated K/V. Named activations retain owned scratch for
+  inspection; this path allocates and is not claimed to be optimized.
+- **Failure contract:** invalid shape/grouping/length/checked arithmetic or
+  non-finite inputs/intermediates returns no valid trace. Caller input and
+  weights are immutable. Aggregate scratch-byte arithmetic is checked.
+- **Exercise:** map 6 query heads to 2 KV heads; identify keys visible at token
+  index 2. Unsolved; see `docs/lessons/03-attention.md`.
+- **Limitations:** synthetic uncached attention; no performance, full-model,
+  memory-footprint, or hardware-acceleration claim. Same observed T01 runtime.
+- **Next:** T04, authorized after this reviewed ticket's commit.
+
 - [ ] **T04 — Decoder and logits.** Compose the two-layer model, feed-forward block, residuals, final normalization, and output projection. Save named intermediate values for one fixture. Compare every block and final logits against NumPy. Add a tiny token-ID generation demo; synthetic weights are not expected to produce useful language.
 
 **Gate:** One complete token-to-logit trace is understandable without an external model runtime. The readable scalar implementation remains the correctness anchor after optimization.
