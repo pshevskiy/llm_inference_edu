@@ -1,0 +1,19 @@
+[package]
+name = "llm_metal_slice"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+
+[features]
+# Compatibility with objc 0.2's macro cfg; no optional execution behavior.
+cargo-clippy = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "=0.33.0"
+objc = "=0.2.7"
+foreign-types = "=0.5.0"
+
+[dev-dependencies]
+llm_inference = { path = "../.." }
+serde_json = "=1.0.149"
+sha2 = "=0.10.9"

@@ -5,8 +5,8 @@ edition = "2024"
 rust-version = "1.90"
 
 [workspace]
-members = ["apple/cpu_bridge"]
-default-members = [".", "apple/cpu_bridge"]
+members = ["apple/cpu_bridge", "apple/metal_slice"]
+default-members = [".", "apple/cpu_bridge", "apple/metal_slice"]
 resolver = "3"
 
 [features]

@@ -1547,7 +1547,59 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M10 — Later GPU and long-context research
 
-- [ ] **T27 — First custom Metal execution slice.** Requires explicit authorization to enter GPU scope. Implement one operation against the scalar reference, then extend toward a full forward pass. Reuse numerical fixtures and benchmark contracts, not undocumented buffer-sharing assumptions. Learn dispatch, synchronization, lifetime, and memory layout before fusion. No compiler framework required.
+- [x] **T27 — First custom Metal execution slice.** Requires explicit authorization to enter GPU scope. Implement one operation against the scalar reference, then extend toward a full forward pass. Reuse numerical fixtures and benchmark contracts, not undocumented buffer-sharing assumptions. Learn dispatch, synchronization, lifetime, and memory layout before fusion. No compiler framework required.
+
+**T27 implementation record — 2026-10-03**
+
+- **Authorization/status:** owner explicitly authorized T27 Metal and confirmed
+  the educational focus is their own understanding of LLM inference; physical
+  iPhone work deferred. First Mac operation implemented and qualified; Astra
+  final review approved, owner review pending. No full GPU forward pass or speed claim.
+- **Files/dependencies:** workspace `apple/metal_slice`, Rust lib/`macos.rs`, one
+  `residual.metal` shader, opt-in `examples/residual.rs`, lesson27/experiment27;
+  Cargo workspace/lock. Pins public Metal bindings0.33.0, objc0.2.7 and
+  foreign-types0.5.0 for autorelease/checked object ownership. Ten added locked
+  dependency packages (three direct, seven transitive). Root scalar forbid-unsafe
+  and CPU production path retained.
+- **Mechanism/safety:** contiguous FP32 residual-add, one thread per element,
+  rounded threadgroups and tail guard. Device/queue/pipeline/three shared buffers
+  reused; bounded capacity1,048,576elements/12MiB logical payload. Positive length,
+  checked byte arithmetic, exact slices, device limits/alignment and finite
+  inputs checked. Private mapped buffers, no caller memory lent to asynchronous
+  work; successful wait before output inspection, finite output before caller
+  copy. All errors preserve caller output; command failure invalidates executor.
+  Nil Objective-C returns checked before Rust ownership/reference construction.
+  Local unsafe signature/length/lifetime/exclusivity invariants; pools release
+  temporary command objects. Fast math explicitly disabled.
+- **Actual evidence:** M1 Pro16GiB/macOS26.6.2/build25G83, Metal deviceApple M1 Pro,
+  unified memorytrue, groupwidth32. All ten lengths1..1,048,576, including partial
+  groups, pass unchanged gate `atol=1e-6/rtol=1e-6` with exact normal-value output.
+  Hand-derived3/1/−5/0, invalid/output preservation, post-error reuse, signedzero,
+  cancellation-to-zero and finiteoverflow rejection pass. Subnormal flushing
+  observed/disclosed; no complete IEEE identity or model qualification.
+- **Commands/results:** `cargo fetch --manifest-path apple/metal_slice/Cargo.toml`
+  exit0 for current-ticket dependencies; no toolchain/model install.
+  `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  exit0:112unit/integration tests,0doctests. `cargo build --offline --release -p llm_metal_slice --example residual`
+  and `/usr/bin/time -l target/release/examples/residual --run
+  docs/evidence/t27-metal-final` exit0. Runtime shader compilation succeeded with
+  global developer directory still CommandLineTools; no global Xcode change.
+- **Measurement/decision:** one bounded process,3warmups/10samples per length.
+  At1,048,576elements median public Metal2.134ms, encoding/submission/wait0.627ms,
+  GPU timestamps0.094ms, scalar0.136ms. Includes copies/finite validation only in
+  full public call. GPU slice slower end-to-end; keep scalar production, no full
+  model/backend comparison. Logical buffer12,582,912bytes, maxRSS59,244,544bytes,
+  peak process footprint50,397,760bytes, measured separately. Energy/sustained
+  thermal/device-loss fault testing not run; no GPU-model inference claim.
+- **Evidence/review:** ignored `t27-{fmt,clippy,test}-final.txt`, build/processlogs,
+  `t27-metal-final/{identity,progress,result,completion}.json`; initial passing
+  `t27-metal-v1` retained. Astra caught panic checks bypassing failed completion;
+  returned errors and incremental observations now preserve evidence. Astra final
+  review approved, no remaining actionable findings. Lesson27 explains execution order, thread3's4+(−4)=0 trace,
+  synchronization and one unsolved97-element tail exercise. Next proposed T26:
+  owner-focused LLM inference exercises; iPhone deferred, no second GPU operation.
+
 - [x] **T28 — Larger-context continuation.** Increase capacity incrementally within the selected model's valid positional configuration and device budget. Measure prefill, decode, cache bytes, and model → tool → model continuation. Begin with contiguous cache and exact prefix reuse. Consider quantized KV, paging, branching, or speculative decoding only as individually justified experiments; neither arbitrary 128K support nor a context-extension method is promised.
 
 **T28 implementation record — 2026-10-03**
