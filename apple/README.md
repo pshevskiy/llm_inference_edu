@@ -35,3 +35,11 @@ These Mac checks do not validate an iPhone, signing, suspension or memory budget
 
 See [the lesson](../docs/lessons/20-native-boundary.md) for execution order and
 [the plan](../docs/PLAN.md) for evidence and remaining gates.
+
+## Public model discovery
+
+`HubSearch.swift` searches public Hub metadata with optional publisher/library
+filters, one bounded page per request and cancellation. It does not download,
+execute or certify discovered models. `HubSearchSmoke.swift` contains offline
+contract checks and an optional `--live` two-page metadata check; see
+[lesson22](../docs/lessons/22-discovery.md) for commands and exact limits.

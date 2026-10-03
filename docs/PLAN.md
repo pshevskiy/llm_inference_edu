@@ -1324,7 +1324,51 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M8 — macOS Workbench and Hugging Face discovery
 
-- [ ] **T22 — MLX model search.** Use the Hub API and its current metadata/filter capabilities, not HTML scraping.[^hub] Support text search, pagination, cancellation, errors, and optional publisher/library filters. Treat missing metadata as unknown. Do not assume `mlx-community` is the entire catalog.
+- [x] **T22 — MLX model search.** Use the Hub API and its current metadata/filter capabilities, not HTML scraping.[^hub] Support text search, pagination, cancellation, errors, and optional publisher/library filters. Treat missing metadata as unknown. Do not assume `mlx-community` is the entire catalog.
+
+**T22 completion record — 2026-10-03**
+
+- **Status:** Mac native public discovery implemented; owner review pending.
+  Independent of blocked T21 phone validation; no mobile or execution claim.
+- **Files:** `apple/HubSearch.swift`, `apple/HubSearchSmoke.swift`, README section,
+  and `docs/lessons/22-discovery.md`. Foundation URLSession is native app metadata
+  transport; no inference engine duplication/new Rust dependency.
+- **API/mechanism:** official current Hub `hf_api.py` list_models and public
+  pagination helper inspected, endpoint live-checked. Downloaded current OpenAPI
+  omits list-models; no invented schema coverage. Optional search/author/library
+  filters, defaultMLX with no publisher restriction, selected expand metadata.
+  Missing author/revision/library/task/tags/download values remain unknown.
+  Query≤1,024UTF8bytes, optionalfields≤128bytes, pages1–50/default20, streamed
+  body≤1MiB, request15s/resource30s. Ephemeral/no credential or cookie storage,
+  redirects refused; status/Retry-After/errors surfaced. Strict observed Link
+  grammar, Foundation URL validation and exact HTTPSHubmetadata path. One actor
+  task/cursor; cancellation plus generation ID excludes late results. No model
+  cards/weights/config downloads, catalog accumulation or compatibility promise.
+- **Verification:** Swift6 `xcrun swiftc -target arm64-apple-macosx26.5
+  -swift-version 6 -warnings-as-errors -O -parse-as-library apple/HubSearch.swift
+  apple/HubSearchSmoke.swift -o docs/evidence/t22-search-smoke` exit0/no diagnostics.
+  Offline executable exit0 covers URL encoding/optionalfilters/invalidqueries,
+  unknown metadata, JSON/count/duplicate/body bounds, empty pages/next cursor,
+  HTTP429/Retry-After, cross-origin/bad/duplicate pagination, explicit and caller
+  cancellation, deterministic newer-query replacement preserving newer cursor.
+  `--live` exit0 retrieves2entries then2nextentries from multiple publishers;
+  public metadata only. Systemcurl also confirmed HTTP200/nextheader; initial
+  Pythonurllib metadata check failed local CA verification, replaced with system
+  TLS trust without bypass. No authentication setup or TLS setting change.
+  Native checks require installed Swift/Mac SDK; Rust numerical tests stay
+  network/hardware independent. fmt/Clippywarningsdenied/cargotest offline pass
+  97unit/integration, zero doc tests; no tolerance change.
+- **Evidence:** ignored `t22-swift-build.txt`, `t22-offline-test.txt`,
+  `t22-live-test.txt`, `t22-live-curl-{headers.txt,body.json}`, `t22-openapi.json`,
+  and `t22-{fmt,clippy,test}.txt`. T20 prose incorrectly classified the final one-test workspace suite as
+  documentation: both T20/T22 logs actually total97unit/integration and0doc
+  tests. This correction supersedes that T20 wording. Earlier failed source/schema-inspection commands
+  were corrected; they do not count as passing verification.
+- **Review/learning:** Astra reviewed contracts and requested the latest-query
+  race test; added. Lesson22 explains query→stream→parse→validate→publish order,
+  A/Blate-response trace and one unsolved pagination/error exercise. Next: T23
+  explicit compatibility/source/artifact identities and atomic installation.
+
 - [ ] **T23 — Compatibility and installation.** Display separate identities for discovered repository, source checkpoint, and execution artifact. Label entries as runnable, recipe available, discovery only, or unsupported. A Qwen source or converted Core ML counterpart is not silently presented as the exact MLX quantization. Pin revisions; check disk space, integrity, interrupted downloads, and atomic install. Never execute repository code. Gated-model authentication is deferred until explicitly scoped.
 - [ ] **T24 — Minimal native UI.** Add search, installed-model details, local chat, cancellation/unload, context budget, and diagnostics. Disclose execution policy and validation status. Run offline after installation. Keep inference math outside SwiftUI.
 
