@@ -1541,7 +1541,65 @@ Y = [[-2, 4], [-2, 13]]
   and one unsolved continuation/edit exercise. Next prerequisite work: T28CPU
   context qualification; no prerequisite is represented as passed.
 
-- [ ] **T26 — Educational application.** Choose one exercise type with the owner before adding content-specific structure. Reuse the engine API. Keep curated lessons, deterministic grading, generated explanations, and progress storage separate. Generation quality is a product qualification gate, not a consequence of numerical correctness.
+- [x] **T26 — Educational application.** Choose one exercise type with the owner before adding content-specific structure. Reuse the engine API. Keep curated lessons, deterministic grading, generated explanations, and progress storage separate. Generation quality is a product qualification gate, not a consequence of numerical correctness.
+
+**T26 implementation record — 2026-10-03**
+
+- **Scope/status:** owner confirmed the current focus is their own LLM inference
+  education. First exercise type: row-major element offsets in X/W/Y, three
+  curated nonsquare problems. Runnable Rust console app implemented; current
+  Rust numerical comparison passed, generated-teaching quality rejected0/3,
+  Astra final review approved, owner review pending. No new UI/server/framework. T25's real-model
+  prerequisite gate was resolved by T28's actual3/3calculator probes; historical
+  T25 record remains unchanged. Owner understanding/review not presumed.
+- **Files:** `src/education.rs`, `education_storage.rs`, rootlib export,
+  `tests/education.rs`, `examples/learn_inference.rs`, `education_probe.rs`,
+  independent `reference/education.py`, lesson26/experiment26. No dependencies.
+- **Contracts:** curation/grading/progress separate from model text and cache.
+  Checked shapes/indices/arithmetic, strict bounded decimal answers; wrong answer
+  gives only a hint, correct unlocks curated explanation. Strict version1progress,
+  known unique IDs, positive/consistent counters, global1000attempt bound,
+  JSON≤4096bytes validated before mutation. Records contain no answers/prompts.
+  Explicit save path only, atomic sibling-file replacement, Unix0600. Invalid
+  inputs or rejected progress leave prior state/file unchanged. No crash-durability
+  claim for unsynced parent-directory metadata.
+- **Checks:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  exit0:117unit/integration,0doc. Five new tests cover nonsquare/final/invalid
+  indices, overflow/decimal errors, retries/state preservation, loaded-record
+  admission and budget, strict untrusted explanation fields, and atomic explicit
+  persistence. Release `learn_inference list`, wronganswer8 then correct9 with
+  ignored progress path exit0. Synthetic trace attempts1/correct0→2/1, not owner
+  submission or approval. CLI progress/model execution lifecycles independent.
+- **Model-quality gate:** normal generated explanations disabled. Separate opt-in
+  probe uses existing Rust CPU engine atcapacity512,80prompt+96reservedoutput,
+  pinned Qwen; full sampled logit/greedy comparison against independent FP32 HF,
+  then strict fields/formula/offset/length/EOS factual gate. Facts cannot certify
+  prose truth and cannot alter grading/progress. Independent reference exits0,
+  quality0/3: Markdown, missing explanation, swapped dimensions and wrong offsets.
+  Current Rust parity exits0: all175emitted full-vocabulary rows pass frozen
+  atol0.001/rtol0.0001 and exact greedy IDs. Worst normalized budgets
+  0.911655/0.857191/0.971271; all EOS pending invariants preserved, processed/history
+  141/142,139/140,132/133. Rust reproduces the rejected0/3quality outcome. No
+  repairs, tolerance changes or teacher claim; curated product remains usable.
+- **Reference/evidence:** `reference/.venv/bin/python reference/education.py --model
+  MODEL --output docs/evidence/t26-reference-final`; release build/probe against
+  its manifest. M1Pro16GiB/macOS26.6.2/build25G83, pinned versions/oneCPUthread.
+  Assets/hashes verified offline. Reference maxRSS2,722,889,728bytes and peak process
+  footprint2,236,189,000bytes, separate fields.
+  Rust maxRSS2,473,279,488bytes/peak process footprint3,036,941,048bytes. Whole
+  probe143.19s includes comparison/reference work, not request-latency evidence.
+  Ignored `t26-*-final.txt`, `t26-learning-{smoke.txt,progress.json}`,
+  `t26-reference-final/`, `t26-rust/`.
+  Initial reference preserved. Identity before model load, partial position/case
+  observations and separate completion/failure; no performance/energy claim.
+- **Review:** Astra reviewed grading, atomic persistence and untrusted model
+  contracts. Corrected Python/Rust UTF-8/full-response size-bound mismatch before
+  final reference. Astra final review approved: no remaining actionable findings;
+  independently audited all175numerical/greedy rows, source identities and
+  rejected0/3teaching result. Lesson26 explains execution order,
+  checked synthetic X offset9/retry trace and one unsolved X/W/Y stride exercise.
+  Physical iPhone validation remains owner-deferred.
 
 **Gate:** Agent continuation reuses the exact valid token prefix; editing history forces invalidation/replay. No new inference implementation appears in either app. The small first model is not presumed to be a capable coding agent or a reliable teacher.
 

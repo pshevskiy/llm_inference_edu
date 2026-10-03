@@ -5,6 +5,7 @@
 pub mod agent;
 pub mod attention;
 pub mod benchmark;
+pub mod education;
 pub mod generation;
 pub mod kernels;
 pub mod kv_cache;
