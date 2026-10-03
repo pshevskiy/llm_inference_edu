@@ -1369,7 +1369,65 @@ Y = [[-2, 4], [-2, 13]]
   A/Blate-response trace and one unsolved pagination/error exercise. Next: T23
   explicit compatibility/source/artifact identities and atomic installation.
 
-- [ ] **T23 — Compatibility and installation.** Display separate identities for discovered repository, source checkpoint, and execution artifact. Label entries as runnable, recipe available, discovery only, or unsupported. A Qwen source or converted Core ML counterpart is not silently presented as the exact MLX quantization. Pin revisions; check disk space, integrity, interrupted downloads, and atomic install. Never execute repository code. Gated-model authentication is deferred until explicitly scoped.
+- [x] **T23 — Compatibility and installation.** Display separate identities for discovered repository, source checkpoint, and execution artifact. Label entries as runnable, recipe available, discovery only, or unsupported. A Qwen source or converted Core ML counterpart is not silently presented as the exact MLX quantization. Pin revisions; check disk space, integrity, interrupted downloads, and atomic install. Never execute repository code. Gated-model authentication is deferred until explicitly scoped.
+
+**T23 completion record — 2026-10-03**
+
+- **Status:** concrete Mac CPU source installation and compatibility contract
+  implemented; owner review pending. No arbitrary MLX execution/conversion or
+  phone/ANE qualification. Other discovered repositories remain discovery-only;
+  a different selected-source revision is unsupported, missing revision unknown.
+- **Files:** `apple/ModelInstallation.swift`, `apple/InstallationSmoke.swift`,
+  `fixtures/cpu-native-artifact.json`, README section and lesson23. Trusted
+  bundled Qwen inventory reused; no external dependency or repository code
+  execution. Discovery/source/execution records remain distinct. Source payload
+  999602607filebytes is not runtime memory. The separate reviewed Mac archive and
+  native executable have actual recorded SHA256 values, not a model alias.
+- **Contract/mechanical sympathy:** one detached install task, bounded disk-based
+  URLSession transfers,4MiB hashing/cancellation checks, no full-weight Data.
+  Checked size/budget arithmetic; destination-volume free-space snapshot must
+  cover2×payload+64MiB. Temporary-volume exhaustion still fails safely; this is
+  not an allocator/runtime budget. Private unique same-parent stage; every file
+  must be regular/nonsymlink, exactsize/hash. Only complete verified directory
+  renamed to final; existing installs verified/reused, corrupt install never
+  overwritten. Own staging cleaned on error/cancel; crash remnants remain
+  partial/uninstalled. Atomic visibility, not power-loss durability. Anonymous
+  HTTPS Hub/CDN redirects only; observed excess-transfer callback cancels, final
+  exactsize mandatory (in-flight chunk can overshoot, no strictdiskceiling).
+- **Identity gate:** source verification produces a capability matching the
+  entire trusted manifest. Runnable additionally requires actual execution
+  archive/executable verification against expected hashes and executable
+  permission; copied artifact metadata alone remains recipe-available. Qualified
+  artifact is the tested T20 Mac build; new builds require new review/qualification.
+  Verification is point-in-time; Rust source loader rechecks before use.
+- **Commands/results:** Swift6 build with `-target arm64-apple-macosx26.5
+  -swift-version 6 -warnings-as-errors -O -parse-as-library` and HubSearch,
+  ModelInstallation, InstallationSmoke exit0/no diagnostics. Offline smoke
+  exit0: tiny independent source/mockexecution data, statuses/pin/missingrevision,
+  disk rejection, manifest/actualexecution mismatch, hash corruption, no overwrite,
+  atomic publication, controlled partial cancel, busy/retry/cleanup and recovery.
+  No model/network/ignored qualification files needed for offline mode.
+  `--network-small` exit0 uses only pinned11KBLICENSE and exercises actual native
+  size/hash/observedoverrun and pre-start cancellation. In-flight sustained
+  network cancellation and1GBnetworkinstallation **not run**; production transfer
+  path is qualified only by that small check. Initial test-only Swift assertion
+  diagnostics corrected before successful build.
+- **Real local evidence:** `--local` stages/verifies the already-downloaded9files
+  underignored`models/installed-qwen/<revision>` and verifies exact recorded
+  T20executionbytes, exit0. Final rerun verifies/reuses existing installation.
+  That qualified native binary then loads installed directory and emits exact
+  `[358,2776,264,48948]` with cancellation/resume/reset/pending counters, exit0.
+  No precision switch/tolerance change/new model download. Full fmt/Clippy
+  warningsdenied/cargotest offline pass97unit/integration,0doctests.
+- **Evidence:** ignored `t23-swift-build.txt`, `t23-offline-test.txt`,
+  `t23-network-small-test.txt`, `t23-local-test.txt`, `t23-installed-generation.txt`,
+  `t23-{fmt,clippy,test}.txt`. Static archive/executable hashes checked in the
+  small artifact identity only; binaries/weights remain ignored.
+- **Review/learning:** Astra identified source-only Runnable gap; added actual
+  execution verification/capability and regression. Lesson23 explains
+  admission→stage→fetch→verify→publish, failed-tokenizer cleanup trace and one
+  unsolved MLX/base-model identity exercise. Next: T24 minimal native Mac UI.
+
 - [ ] **T24 — Minimal native UI.** Add search, installed-model details, local chat, cancellation/unload, context budget, and diagnostics. Disclose execution policy and validation status. Run offline after installation. Keep inference math outside SwiftUI.
 
 **Gate:** The search requirement works without falsely promising that every MLX result runs on ANE or in our Rust loader.

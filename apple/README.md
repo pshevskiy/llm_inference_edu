@@ -43,3 +43,14 @@ filters, one bounded page per request and cancellation. It does not download,
 execute or certify discovered models. `HubSearchSmoke.swift` contains offline
 contract checks and an optional `--live` two-page metadata check; see
 [lesson22](../docs/lessons/22-discovery.md) for commands and exact limits.
+
+## Pinned installation and compatibility
+
+`ModelInstallation.swift` separates repository/source/execution identities and
+installs only the trusted pinned CPU source recipe. It checks disk space,
+stages on disk, verifies every size/hash and atomically publishes a complete
+directory. Cancellation cleans up only its own stage. Runnable needs source and
+actual execution-byte verification; MLX search results remain discovery-only.
+`InstallationSmoke.swift` has small offline fixtures, optional LICENSE-only
+`--network-small`, and an opt-in `--local` existing-source check tied to the
+recorded Mac artifacts. See [lesson23](../docs/lessons/23-installation.md).
