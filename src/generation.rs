@@ -168,6 +168,93 @@ impl<'a> GenerationSession<'a> {
         self.history.extend_from_slice(prompt);
         self.evaluate_pending(cancel)
     }
+    /// Admit a complete external context suffix at a stopped generation boundary.
+    /// The emitted pending token is already in history and is evaluated exactly
+    /// once before the new suffix; callers must not append it a second time.
+    /// Sampling state is retained; output budget restarts for the next segment.
+    /// On pre-admission error/cancellation all state stays unchanged. Cancellation
+    /// after admission preserves the entire new history and exact valid prefix.
+    pub fn append_context(
+        &mut self,
+        suffix: &[usize],
+        max_new: usize,
+        cancel: &AtomicBool,
+    ) -> Result<(), StateError> {
+        self.admit_context(suffix, max_new, cancel)?;
+        self.evaluate_pending(cancel)
+    }
+    fn admit_context(
+        &mut self,
+        suffix: &[usize],
+        max_new: usize,
+        cancel: &AtomicBool,
+    ) -> Result<(), StateError> {
+        if self.history.is_empty()
+            || self.stop.is_none()
+            || suffix.is_empty()
+            || max_new == 0
+            || max_new >= self.cache.capacity()
+            || suffix.iter().any(|&id| id >= self.vocab)
+            || self
+                .history
+                .len()
+                .checked_add(suffix.len())
+                .and_then(|n| n.checked_add(max_new))
+                .is_none_or(|n| n > self.cache.capacity())
+        {
+            return Err(StateError::InvalidParameters);
+        }
+        if !self.cache.is_valid() {
+            return Err(StateError::Cache(CacheError::InvalidState));
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(StateError::Cancelled);
+        }
+        self.history.extend_from_slice(suffix);
+        self.max_new = max_new;
+        self.generated = 0;
+        self.stop = None;
+        Ok(())
+    }
+    /// Editing any existing history invalidates its KV prefix. Validate first,
+    /// then reset/replay from zero; no cache prefix survives an accepted edit.
+    /// A cancelled partial replay retains the replacement history for resume.
+    pub fn replay_history(
+        &mut self,
+        history: &[usize],
+        max_new: usize,
+        cancel: &AtomicBool,
+    ) -> Result<(), StateError> {
+        self.admit_replay(history, max_new, cancel)?;
+        self.evaluate_pending(cancel)
+    }
+    fn admit_replay(
+        &mut self,
+        history: &[usize],
+        max_new: usize,
+        cancel: &AtomicBool,
+    ) -> Result<(), StateError> {
+        if history.is_empty()
+            || max_new == 0
+            || max_new >= self.cache.capacity()
+            || history.iter().any(|&id| id >= self.vocab)
+            || history
+                .len()
+                .checked_add(max_new)
+                .is_none_or(|n| n > self.cache.capacity())
+        {
+            return Err(StateError::InvalidParameters);
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(StateError::Cancelled);
+        }
+        self.reset();
+        self.max_new = max_new;
+        // No second pre-admission cancellation check after reset: replacement
+        // history must survive a cancellation arriving after accepted editing.
+        self.history.extend_from_slice(history);
+        Ok(())
+    }
     fn evaluate_pending(&mut self, cancel: &AtomicBool) -> Result<(), StateError> {
         while self.cache.processed() < self.history.len() {
             if cancel.load(Ordering::Relaxed) {
@@ -267,5 +354,70 @@ mod state_tests {
         assert_eq!(state.next_token(&cancel).unwrap(), Some(41));
         assert_eq!(state.processed(), 3);
         assert_eq!(state.history(), [1, 5, 7, 41]);
+    }
+    #[test]
+    fn continued_and_edited_logits_match_independent_numpy() {
+        let model = Decoder::from_json(include_str!("../fixtures/tiny-model.json")).unwrap();
+        let mut state = GenerationSession::new(&model, 32, Sampling::Greedy, &[], 1).unwrap();
+        let cancel = AtomicBool::new(false);
+        state.start(&[1, 5, 7]).unwrap();
+        state.next_token(&cancel).unwrap();
+        state.append_context(&[2, 3], 1, &cancel).unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../fixtures/t25-continuation.json")).unwrap();
+        for (i, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+            if i == 1 {
+                let ids: Vec<usize> = case["ids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_u64().unwrap() as usize)
+                    .collect();
+                state.replay_history(&ids, 1, &cancel).unwrap();
+            }
+            for (&actual, expected) in state.logits.iter().zip(case["logits"].as_array().unwrap()) {
+                let expected = expected.as_f64().unwrap() as f32;
+                assert!(actual.is_finite());
+                assert!(
+                    (actual - expected).abs() <= 1e-5 + 1e-4 * expected.abs(),
+                    "{i}: {actual} vs {expected}"
+                );
+            }
+            assert_eq!(state.processed(), 6);
+        }
+    }
+    #[test]
+    fn cancellation_after_context_or_edit_admission_retains_exact_history() {
+        let model = Decoder::from_json(include_str!("../fixtures/tiny-model.json")).unwrap();
+        let mut state = GenerationSession::new(&model, 32, Sampling::Greedy, &[], 1).unwrap();
+        let cancel = AtomicBool::new(false);
+        state.start(&[1, 5, 7]).unwrap();
+        state.next_token(&cancel).unwrap();
+        state.admit_context(&[2, 3], 1, &cancel).unwrap();
+        // Deterministic reachable boundary after the formerly pending 41 step.
+        state.cache.step_into(41, &mut state.logits).unwrap();
+        state.logits_ready = true;
+        cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(
+            state.evaluate_pending(&cancel),
+            Err(StateError::Cancelled)
+        ));
+        assert_eq!(state.history(), [1, 5, 7, 41, 2, 3]);
+        assert_eq!(state.processed(), 4);
+        cancel.store(false, Ordering::Relaxed);
+        assert_eq!(state.next_token(&cancel).unwrap(), Some(14));
+        state
+            .admit_replay(&[2, 5, 7, 41, 2, 3], 1, &cancel)
+            .unwrap();
+        cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(
+            state.evaluate_pending(&cancel),
+            Err(StateError::Cancelled)
+        ));
+        assert_eq!(state.history(), [2, 5, 7, 41, 2, 3]);
+        assert_eq!(state.processed(), 0);
+        cancel.store(false, Ordering::Relaxed);
+        state.next_token(&cancel).unwrap();
+        assert_eq!(state.processed(), 6);
     }
 }

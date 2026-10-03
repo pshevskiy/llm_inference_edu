@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent;
 pub mod attention;
 pub mod benchmark;
 pub mod generation;

@@ -1492,6 +1492,55 @@ Y = [[-2, 4], [-2, 13]]
 ### M9 — A small agent and one educational application
 
 - [ ] **T25 — Agent loop and cache-preserving continuation.** Implement a bounded sequential model → validate tool request → execute → append result → model loop. Start with deterministic mock tool calls, then qualify the model's actual tool-use capability. Use a calculator or read-only user-selected content; no arbitrary shell. Enforce typed arguments, allowlists, step/output budgets, cancellation, and permissions. Tool text is untrusted data. Persist transcript separately from volatile cache.
+
+**T25 implementation record — 2026-10-03**
+
+- **Status:** bounded deterministic calculator loop and cache continuation
+  implemented; actual model tool-use qualification blocked by the earned context
+  gate. Ticket remains unchecked; owner review pending. No reliable-agent claim.
+- **Files:** `src/agent.rs`, `generation.rs`, `lib.rs`, `tests/agent.rs`,
+  `generation_state.rs`, `examples/agent.rs`, independent
+  `reference/agent_continuation.py`, `agent_admission.py`, small
+  `fixtures/t25-continuation.json`, and lesson25. No new dependencies, unsafe
+  math, arbitrary shell tools, network tools or automatic transcript storage.
+- **Contracts:** allowlisted typed calculator add/subtract/multiply/divide;
+  strict JSON fields/types, finite operands within ±1e12, zero division/nonfinite
+  result rejected. Permission each call; at most8calls, model reply≤4096bytes,
+  result≤256bytes, total token positions≤2048 and model capacity, exported
+  transcript≤65536bytes. Caller explicitly encodes trusted result; tiny fixture
+  IDs do not pretend to encode real text. Transcript separate from volatile cache.
+  Accepted history edits reset/replay; no agent mutable-cache/restore shortcut.
+- **Trace/resources:** real tiny generation emits41 at evaluated3/history4;
+  mock2+3 yields5, appendfixture[2,3] evaluates41 once then2/3, reaching6/6;
+  next actual tiny ID14 is pending at6/7. Contiguous KV/workspace retained;
+  existing prefix not recomputed. Pre-admission invalid/cancel preserves state;
+  accepted partial cancellation retains whole history; post-KV arithmetic failure
+  invalidates cache. No unmeasured speed/allocation-free claim.
+- **Commands/results:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  all exit0:105unit/integration tests,0doctests. Runnable
+  `cargo run --offline --example agent` exit0 produces exact trace and separate
+  JSON transcript. `reference/.venv/bin/python reference/agent_continuation.py
+  --write` then verification exit0; independent entire64logit vectors for
+  continuation and edited replay pass unchanged tiny atol1e-5/rtol1e-4.
+  Tests cover schema/permission/step/context/finite arithmetic, phase ordering,
+  invalid-input preservation, cancellation before/after admission, replay, and
+  continuation numerical failure after KV writes with reset recovery.
+- **Real-model gate:** admission-only local pinned tokenizer probe exit0 reports
+  71promptIDs+64reservedoutput=135positions, beyond existing8position evidence.
+  Actual Qwen model tool decision/result/final-answer test **not run**. Follow-up:
+  T28 incremental teacher-forced CPU qualification and measured continuation,
+  then run the bounded protocol with those earned positions. No tolerance,
+  precision, model or native admission silently changed. T26 subject/audience
+  and T27 Metal authorization remain pending; physical T21 remains blocked.
+- **Evidence/review:** ignored `docs/evidence/t25-{fmt,clippy,test,reference,
+  example}.txt`, `t25-real-admission.json`. Astra caught cancellation between
+  replay reset/admission; replacement now recorded before any further cancel
+  check, with deterministic boundary regression. Astra final review approved,
+  no remaining actionable findings. Lesson25 explains each stage, exact3/4→6/6→6/7 trace
+  and one unsolved continuation/edit exercise. Next prerequisite work: T28CPU
+  context qualification; no prerequisite is represented as passed.
+
 - [ ] **T26 — Educational application.** Choose one exercise type with the owner before adding content-specific structure. Reuse the engine API. Keep curated lessons, deterministic grading, generated explanations, and progress storage separate. Generation quality is a product qualification gate, not a consequence of numerical correctness.
 
 **Gate:** Agent continuation reuses the exact valid token prefix; editing history forces invalidation/replay. No new inference implementation appears in either app. The small first model is not presumed to be a capable coding agent or a reliable teacher.
