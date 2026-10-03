@@ -274,7 +274,9 @@ impl Decoder {
 
     /// Consumes validated Qwen buffers; moves allocations rather than copying
     /// weights. Capacity is a caller admission choice, never the tokenizer's
-    /// advertised context. T06 starts with at most 32 tokens.
+    /// advertised context. CPU experiments may explicitly request up to 2048
+    /// positions; this construction limit is not numerical/device qualification.
+    /// Existing CLI/native callers retain their separately qualified budgets.
     pub fn from_qwen(
         loaded: crate::weights::LoadedQwen,
         capacity: usize,
@@ -282,7 +284,7 @@ impl Decoder {
         use crate::weights::{LoadError, tensor_shapes};
         let c = loaded.config;
         tensor_shapes(&c).map_err(ModelError::Checkpoint)?;
-        if capacity == 0 || capacity > 32 || capacity > c.max_position_embeddings {
+        if capacity == 0 || capacity > 2048 || capacity > c.max_position_embeddings {
             return Err(ModelError::ContextLimit);
         }
         let mut tensors = loaded.tensors;

@@ -10,9 +10,9 @@ use std::time::Instant;
 
 fn run() -> Result<(), String> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if !(2..=5).contains(&args.len()) {
+    if !(2..=6).contains(&args.len()) {
         return Err(
-            "usage: llm_inference CHECKPOINT_DIR PROMPT [MAX_NEW=8] [SYSTEM=Be brief.] [MODE=cached|uncached]".into(),
+            "usage: llm_inference CHECKPOINT_DIR PROMPT [MAX_NEW=8] [SYSTEM=Be brief.] [MODE=cached|uncached] [CONTEXT=32]".into(),
         );
     }
     let max_new = args
@@ -25,6 +25,26 @@ fn run() -> Result<(), String> {
     let mode = args.get(4).map(String::as_str).unwrap_or("cached");
     if !matches!(mode, "cached" | "uncached") {
         return Err("MODE must be cached or uncached".into());
+    }
+    let capacity = args
+        .get(5)
+        .map(|s| s.parse::<usize>())
+        .transpose()
+        .map_err(|_| "CONTEXT must be a positive integer")?
+        .unwrap_or(32);
+    if ![32, 128, 256, 512, 1024, 2048].contains(&capacity) {
+        return Err(
+            "CONTEXT must be 32,128,256,512,1024 or2048; consult T28 workload qualification".into(),
+        );
+    }
+    if mode == "uncached" && capacity > 32 {
+        return Err(
+            "larger-context CLI requires cached mode; uncached baseline retains32position limit"
+                .into(),
+        );
+    }
+    if max_new == 0 || max_new >= capacity {
+        return Err("MAX_NEW must be positive and smaller than CONTEXT".into());
     }
     let inventory: Inventory =
         serde_json::from_str(include_str!("../fixtures/qwen-inventory.json"))
@@ -48,18 +68,51 @@ fn run() -> Result<(), String> {
             true,
         )
         .map_err(|e| format!("template: {e:?}"))?;
-    // Admit before expensive weight loading. This baseline's explicit cap is 32.
-    if max_new == 0 || prompt.len().checked_add(max_new).is_none_or(|n| n > 32) {
+    // Admit the whole prompt/output before weight loading. Capacity is explicit;
+    // no truncation, rolling window or silent model/precision fallback.
+    if max_new == 0
+        || prompt
+            .len()
+            .checked_add(max_new)
+            .is_none_or(|n| n > capacity)
+    {
         return Err(format!(
-            "prompt {} + requested output {max_new} must fit the 32-token capacity; choose a shorter prompt/system or output limit",
+            "prompt {} + requested output {max_new} must fit the {capacity}-token capacity; choose a shorter prompt/system or output limit",
             prompt.len()
         ));
     }
     let model = Decoder::from_qwen(
         load_qwen(directory, &inventory).map_err(|e| format!("load: {e:?}"))?,
-        32,
+        capacity,
     )
     .map_err(|e| format!("model: {e:?}"))?;
+    let weights = model
+        .logical_weight_bytes()
+        .map_err(|e| format!("weights:{e:?}"))?;
+    let c = model.config();
+    let kv = c
+        .layers
+        .checked_mul(2)
+        .and_then(|n| n.checked_mul(c.kv_heads))
+        .and_then(|n| n.checked_mul(capacity))
+        .and_then(|n| n.checked_mul(c.head_dim))
+        .and_then(|n| n.checked_mul(size_of::<f32>()))
+        .ok_or("KV size overflow")?;
+    let admission = weights
+        .checked_add(kv)
+        .and_then(|n| {
+            llm_inference::benchmark::scratch_estimate(c, capacity)
+                .ok()
+                .and_then(|s| n.checked_add(s))
+        })
+        .and_then(|n| n.checked_add(65 * 1024 * 1024))
+        .ok_or("working-set estimate overflow")?;
+    if admission > 6 * 1024 * 1024 * 1024 {
+        return Err("logical working-set estimate exceeds6GiB".into());
+    }
+    eprintln!(
+        "capacity={capacity}; logical weights={weights}, KV={kv}, admission with allowances={admission}bytes (not measured footprint)"
+    );
     let load_time = load_start.elapsed();
     let generation_start = Instant::now();
     let (emitted, stop) = if mode == "uncached" {
@@ -73,7 +126,7 @@ fn run() -> Result<(), String> {
     } else {
         let mut state = GenerationSession::new(
             &model,
-            32,
+            capacity,
             Sampling::Greedy,
             tokenizer.stop_tokens(),
             max_new,

@@ -231,3 +231,36 @@ fn qwen_buffers_move_into_the_existing_decoder_with_bounded_capacity() {
         Err(ModelError::Checkpoint(LoadError::MissingTensor(_)))
     ));
 }
+
+#[test]
+fn explicit_cpu_context_is_bounded_by_checkpoint_and_experiment_limit() {
+    use llm_inference::kv_cache::CachedSession;
+    use llm_inference::model::{Decoder, ModelError};
+    let mut c = config();
+    c.max_position_embeddings = 128;
+    let (shapes, data) = contents(&c, Dtype::BF16);
+    let file = bytes(&shapes, &data, Dtype::BF16);
+    let model = Decoder::from_qwen(decode_qwen(&file, c.clone()).unwrap(), 128).unwrap();
+    assert_eq!(model.config().max_tokens, 128);
+    assert_eq!(CachedSession::new(&model, 128).unwrap().capacity(), 128);
+    for capacity in [0, 129, 2049, usize::MAX] {
+        assert!(matches!(
+            Decoder::from_qwen(decode_qwen(&file, c.clone()).unwrap(), capacity),
+            Err(ModelError::ContextLimit)
+        ));
+    }
+    c.max_position_embeddings = 32768;
+    let model = Decoder::from_qwen(decode_qwen(&file, c.clone()).unwrap(), 2048).unwrap();
+    assert_eq!(
+        CachedSession::new(&model, 2048).unwrap().logical_bytes(),
+        2 * 2048
+            * model.config().layers
+            * model.config().kv_heads
+            * model.config().head_dim
+            * size_of::<f32>()
+    );
+    assert!(matches!(
+        Decoder::from_qwen(decode_qwen(&file, c).unwrap(), 2049),
+        Err(ModelError::ContextLimit)
+    ));
+}

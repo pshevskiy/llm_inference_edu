@@ -1548,7 +1548,92 @@ Y = [[-2, 4], [-2, 13]]
 ### M10 — Later GPU and long-context research
 
 - [ ] **T27 — First custom Metal execution slice.** Requires explicit authorization to enter GPU scope. Implement one operation against the scalar reference, then extend toward a full forward pass. Reuse numerical fixtures and benchmark contracts, not undocumented buffer-sharing assumptions. Learn dispatch, synchronization, lifetime, and memory layout before fusion. No compiler framework required.
-- [ ] **T28 — Larger-context continuation.** Increase capacity incrementally within the selected model's valid positional configuration and device budget. Measure prefill, decode, cache bytes, and model → tool → model continuation. Begin with contiguous cache and exact prefix reuse. Consider quantized KV, paging, branching, or speculative decoding only as individually justified experiments; neither arbitrary 128K support nor a context-extension method is promised.
+- [x] **T28 — Larger-context continuation.** Increase capacity incrementally within the selected model's valid positional configuration and device budget. Measure prefill, decode, cache bytes, and model → tool → model continuation. Begin with contiguous cache and exact prefix reuse. Consider quantized KV, paging, branching, or speculative decoding only as individually justified experiments; neither arbitrary 128K support nor a context-extension method is promised.
+
+**T28 implementation record — 2026-10-03**
+
+- **Status:** CPU construction/admission explicitly accepts up to 2,048 positions,
+  bounded by the checkpoint's positional limit. Stages
+  32/128/256/512/1,024/2,048 all pass teacher-forced and actual sampled-continuation
+  gates. Implementation complete; Astra final review approved, owner review pending.
+  Native admission remains 8 with allocated capacity 32; default CLI capacity is
+  32, and larger CLI context requires an explicit cached-mode argument. No Metal,
+  quantized KV, paging, branching or speculative execution.
+- **Files:** `src/model.rs`, `main.rs`, `generation.rs`, `agent.rs`;
+  `tests/weights.rs`, `generation_state.rs`, `agent.rs`, `context.rs`;
+  `examples/context_qualification.rs`, `agent_qwen_qualification.rs`; independent
+  `reference/long_context.py`, `agent_qwen.py`, `context_tiny.py`;
+  `fixtures/t28-tiny-context.json`, lesson28, experiment28 and benchmark commands.
+  No new dependencies or toolchain installation.
+- **Evidence:** actual M1 Pro, 16 GiB, macOS 26.6.2/build25G83. Independent pinned
+  torch2.6.0/Transformers4.46.3 CPU FP32 eager reference; every vocabulary value
+  at each teacher-forced position is finite and passes frozen
+  `atol=0.001/rtol=0.0001`, with exact greedy IDs. Each stage's worst normalized
+  budget is 0.758759, max absolute error 0.0008853674 (position0). Three independent
+  full vocabulary rows also check each actual sampled/continued history. Timing
+  is one bounded warm request per capacity, not robust percentiles or sustained
+  thermal/energy evidence. Peak process footprints: capacity128 = 2,977,958,552
+  bytes; 256 = 2,981,169,816; 512 = 2,987,608,728; 1,024 = 3,000,339,120;
+  2,048 = 3,043,199,688. Final capacity2,048 wrapper/engine exit0; maximum RSS
+  2,884,534,272 bytes, logical KV 50,331,648 bytes (48 MiB). Its 2,036-token
+  prefill takes721.824s, decode2.627tokens/s, four-ID suffix continuation1.903s.
+  Evaluated/history trace: 2,037/2,038 → 2,042/2,042 → 2,042/2,043. Three sampled
+  request rows have worst normalized budgets0.061203/0.052564/0.050779.
+  Stages32/128/256 belong to earlier source589420…/executable95381…;
+  512/1,024/2,048 match current source48aafe…/executable42818…. CLI integration
+  and startup-only executable identity recording were finalized between these
+  groups. Earlier source bytes were not archived; no complete bytewise diff or
+  identical-build claim. Experiment28 identifies both full hash pairs.
+- **Reproducible commands:** `reference/.venv/bin/python reference/long_context.py
+  --model models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775
+  --capacity N --output docs/evidence/t28-reference-cN` then
+  `target/release/examples/context_qualification MODEL
+  docs/evidence/t28-reference-cN/manifest.json docs/evidence/t28-rust-cN`.
+  Fresh paths preserve earlier evidence; final capacity32 reference uses the
+  `c32-v2` suffix. `/usr/bin/time -l` outside the sandbox records physical RSS and
+  process footprint for later stages. Capacity32's sandboxed wrapper exited1
+  because `sysctl kern.clockrate` was denied, although the engine passed/exited0;
+  its physical figures are unavailable. The first capacity32 reference is
+  preserved and superseded by v2 with sampled-history rows/provenance. The first
+  2,048-position reference passed/exited0 with shared-memory diagnostics. An
+  unchanged repeat outside the sandbox passed/exited0 without diagnostics; all
+  streamed logits and request oracles are identical. Final Rust capacity2,048
+  uses `t28-reference-c2048-v2`; the first run is preserved.
+- **Checks:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  all exit0: 110 unit/integration tests, 0 doctests. Independent 128-position tiny
+  fixture verifies positions31/63/127, continuation crossing the old capacity32
+  boundary, exact shared-prefix outputs at different cache strides, and rejected
+  full-cache writes leaving output unchanged. CLI capacity4096 and uncached128
+  reject before weight loading (expected exit1). Real CLI capacity512 smoke check
+  exits0: 24 prompt IDs → answer5+EOS, evaluated25/history26.
+- **Actual tool loop:** after capacity512/current-source qualification, the real
+  model calculator probes pass3/3. Every emitted full logit row and greedy ID
+  agrees with independent HF; worst normalized budgets 0.231009/0.335222/0.242342.
+  Strict typed add(2,3), subtract(7,2), divide(6,2) requests produce final answers
+  5/5/3. First trace: 86 prompt IDs → evaluated109/history110; append20 trusted
+  result/framing IDs, evaluating pending EOS once → 130/130; final → 139/140.
+  Rust peak process footprint is 3,034,467,064 bytes. Three fixed public probes
+  establish no general reliability. Evidence: `t28-agent-{reference,rust}/` and
+  process logs. This resolves T25's earlier actual-model/context gate; its
+  historical record remains unchanged and owner review remains pending.
+- **Device limitation:** no installed iOS Rust standard library. Global developer
+  directory currently selects CommandLineTools; an explicit nonpersistent Xcode
+  `devicectl list devices --timeout 10` exits127 because its shim cannot find the
+  CoreDevice framework (component-install request failed). No successful install,
+  signing change or physical validation; phone availability remains unknown.
+  Evidence: `t28-device-readiness.json`, `t28-device-list.txt`. Follow-up: finish
+  Xcode component setup manually, then repeat that read-only device query and
+  explicitly select/install the iOS Rust target before the T21 physical suite.
+- **Review:** Astra caught ungated sampled-continuation history and late-only
+  provenance; added independent request rows, immutable before-run identities and
+  completion/failure records. Agent probes capture fresh host/OS/RAM and Python
+  failure/normalized RSS. Astra final review approved: no remaining actionable
+  findings; independently audited every saved position sequence/gate and current
+  source matches stages512/1,024/2,048. Lesson28 explains buffer stride,
+  memory formula, the 500→501/502→506/507 trace and one unsolved offset/cache-copy
+  exercise. Evidence paths are ignored; weights and large references stay out of
+  Git. T26 subject/audience and T27 explicit Metal authorization remain pending.
 
 **Gate:** Each new backend/context/device combination earns independent correctness and resource evidence. A faster kernel is not automatically a faster application.
 

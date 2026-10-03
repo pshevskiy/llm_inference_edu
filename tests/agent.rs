@@ -167,3 +167,24 @@ fn arithmetic_operations_are_concrete_and_deterministic() {
         );
     }
 }
+
+#[test]
+fn explicit_stop_token_remains_pending_and_is_not_duplicated_by_a_tool_result() {
+    let model = model();
+    let cancel = AtomicBool::new(false);
+    let mut agent = AgentSession::new_with_stop_tokens(&model, 32, 4, 1, &[41]).unwrap();
+    agent.start(&[1, 5, 7], &cancel).unwrap();
+    assert_eq!(agent.next_token(&cancel).unwrap(), 41);
+    assert_eq!(agent.phase(), Phase::AwaitingReply);
+    assert_eq!(agent.history(), [1, 5, 7, 41]);
+    assert_eq!(agent.processed(), 3);
+    agent.prepare_reply(CALL, true).unwrap();
+    agent.append_result(&[2, 3], &cancel).unwrap();
+    assert_eq!(agent.history(), [1, 5, 7, 41, 2, 3]);
+    assert_eq!(agent.processed(), 6);
+    assert_eq!(agent.next_token(&cancel).unwrap(), 14);
+    assert!(matches!(
+        AgentSession::new_with_stop_tokens(&model, 32, 1, 1, &[64]),
+        Err(AgentError::Generation(StateError::InvalidParameters))
+    ));
+}

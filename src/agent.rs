@@ -135,12 +135,29 @@ impl<'a> AgentSession<'a> {
         max_new: usize,
         max_calls: usize,
     ) -> Result<Self, AgentError> {
+        Self::new_with_stop_tokens(model, capacity, max_new, max_calls, &[])
+    }
+    /// Explicit EOS IDs for the selected model/tokenizer. EOS is in history
+    /// and may remain pending; trusted result framing must not duplicate it.
+    pub fn new_with_stop_tokens(
+        model: &'a Decoder,
+        capacity: usize,
+        max_new: usize,
+        max_calls: usize,
+        stop_tokens: &[usize],
+    ) -> Result<Self, AgentError> {
         if max_calls == 0 || max_calls > MAX_TOOL_CALLS || capacity > 2048 {
             return Err(AgentError::InvalidLimits);
         }
         Ok(Self {
-            generation: GenerationSession::new(model, capacity, Sampling::Greedy, &[], max_new)
-                .map_err(AgentError::Generation)?,
+            generation: GenerationSession::new(
+                model,
+                capacity,
+                Sampling::Greedy,
+                stop_tokens,
+                max_new,
+            )
+            .map_err(AgentError::Generation)?,
             transcript: Transcript::default(),
             phase: Phase::New,
             max_new,
@@ -267,6 +284,10 @@ impl<'a> AgentSession<'a> {
     }
     pub fn processed(&self) -> usize {
         self.generation.processed()
+    }
+    /// Inspection of the evaluated prefix, without consuming a pending token.
+    pub fn prefix_logits(&self) -> Option<&[f32]> {
+        self.generation.prefix_logits()
     }
     pub fn transcript(&self) -> &Transcript {
         &self.transcript

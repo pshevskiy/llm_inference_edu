@@ -247,3 +247,19 @@ fn continuation_admission_rejects_before_writes_and_editing_replays() {
         expected["cases"][1]["greedy"].as_u64().unwrap() as usize
     );
 }
+
+#[test]
+fn inspecting_prefix_logits_preserves_pending_token_and_reset_hides_old_values() {
+    let model = model();
+    let cancel = AtomicBool::new(false);
+    let mut state = GenerationSession::new(&model, 32, Sampling::Greedy, &[], 1).unwrap();
+    assert!(state.prefix_logits().is_none());
+    state.start(&[1, 5, 7]).unwrap();
+    let before = state.prefix_logits().unwrap().to_vec();
+    assert_eq!(state.next_token(&cancel).unwrap(), Some(41));
+    assert_eq!(state.prefix_logits().unwrap(), before);
+    assert_eq!(state.processed(), 3);
+    assert_eq!(state.history(), [1, 5, 7, 41]);
+    state.reset();
+    assert!(state.prefix_logits().is_none());
+}

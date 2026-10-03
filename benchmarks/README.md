@@ -81,3 +81,62 @@ It rotates independent row calls and chunk1/2/4/8 on fifteen public numerical
 workloads. `docs/experiments/14-prefill.md` records the negative result. Production
 model prefill remains serial; projection timing does not certify cached batched
 prefill or sustained model throughput.
+
+## T28: explicit larger CPU contexts
+
+Larger-context qualification is a separate opt-in from the short matched-policy
+benchmark above. Existing workload files and native app budgets are preserved.
+Build the Rust qualification examples in release mode:
+
+```sh
+cargo build --offline --release --example context_qualification \
+  --example agent_qwen_qualification
+```
+
+For each stage (32, 128, 256, 512, 1,024, then 2,048), choose fresh evidence paths,
+run the pinned CPU reference first, then the Rust qualifier. Advance only after
+the reference stability, Rust value/greedy gates, sampled-continuation gates,
+and resource observations pass. Actual completed stages are in `docs/PLAN.md`.
+
+```sh
+reference/.venv/bin/python reference/long_context.py \
+  --model models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775 \
+  --capacity 512 --output docs/evidence/my-context-reference-512
+/usr/bin/time -l target/release/examples/context_qualification \
+  models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775 \
+  docs/evidence/my-context-reference-512/manifest.json \
+  docs/evidence/my-context-rust-512
+```
+
+The independent reference streams vocabulary rows to disk. Its selected prefix
+calibration uses explicitly budgeted eager attention matrices and only the final
+logits row. Production cached Rust keeps one vocabulary row and linear workspace.
+Each long Rust stage includes one bounded sampled request, not three warmups/ten
+repetitions or a sustained-load/p95 claim. Prefill/TTFT/decode/continuation exclude
+reference comparisons. Caller-owned token history retains the final pending ID.
+The first sandboxed run could not measure physical memory; use an environment
+with permitted process observation and keep unavailable values explicit.
+
+After a passed larger-context result, the actual calculator capability probe
+requires its identity, exact current-source match, and independent greedy rows:
+
+```sh
+reference/.venv/bin/python reference/agent_qwen.py \
+  --model models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775 \
+  --qualification docs/evidence/my-context-rust-512/result.json \
+  --output docs/evidence/my-agent-reference
+/usr/bin/time -l target/release/examples/agent_qwen_qualification \
+  models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775 \
+  docs/evidence/my-context-rust-512/result.json \
+  docs/evidence/my-agent-reference/manifest.json \
+  docs/evidence/my-agent-rust
+```
+
+This checks three fixed public arithmetic questions; each request permits one
+calculator call and 64 output tokens per segment. Model-produced typed requests,
+trusted results and final answers are recorded separately from numerical parity.
+The tool uses the already-qualified no-tools chat branch with a numeric user-data
+message, not an assumed native Qwen tool template. A completed experiment can
+report a failed capability gate without inventing success or widening tolerances.
+New code/binaries or another device need new evidence; old proof is not a token
+permission to execute arbitrary tools. No network model download is performed.

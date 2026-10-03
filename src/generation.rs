@@ -278,6 +278,12 @@ impl<'a> GenerationSession<'a> {
     pub fn processed(&self) -> usize {
         self.cache.processed()
     }
+    /// Read-only logits of the evaluated prefix, including after an emission
+    /// leaves one history token pending. None before evaluation/reset or after
+    /// numerical failure. Does not evaluate that pending token for inspection.
+    pub fn prefix_logits(&self) -> Option<&[f32]> {
+        (self.cache.is_valid() && self.cache.processed() > 0).then_some(&self.logits)
+    }
     pub fn is_valid(&self) -> bool {
         self.cache.is_valid()
     }
