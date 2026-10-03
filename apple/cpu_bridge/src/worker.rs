@@ -2,7 +2,7 @@
 //! A command produces one bounded event; the client must consume it before
 //! submitting another command. No token callbacks, borrowed foreign buffers,
 //! self-referential model/session object or second model/cache copy.
-use crate::{Event, code, kind};
+use crate::{Delivery, Event, MAX_TEXT, code, kind};
 use llm_inference::generation::{GenerationSession, StateError};
 use llm_inference::model::Decoder;
 use llm_inference::sampling::Sampling;
@@ -66,10 +66,14 @@ fn failure(generation: Option<&GenerationSession<'_>>, error: StateError) -> Eve
     )
 }
 
+fn deliver(events: &SyncSender<Delivery>, event: Event, text: String) -> bool {
+    events.send(Delivery { event, text }).is_ok()
+}
+
 pub(crate) fn run(
     source: Source,
     commands: Receiver<Command>,
-    events: SyncSender<Event>,
+    events: SyncSender<Delivery>,
     cancel: Arc<AtomicBool>,
     fatal: Arc<AtomicBool>,
 ) {
@@ -95,28 +99,44 @@ pub(crate) fn run(
     };
     let Some((model, tokenizer)) = loaded else {
         fatal.store(true, Ordering::Release);
-        let _ = events.send(snapshot(None, kind::ERROR, code::MODEL_FAILED, None));
+        let _ = deliver(
+            &events,
+            snapshot(None, kind::ERROR, code::MODEL_FAILED, None),
+            String::new(),
+        );
         return;
     };
     // Tiny JSON is caller supplied: bound allocation before building a session.
     // This bridge deliberately supports only the already-qualified small models.
     if model.config().max_tokens > 32 || model.config().vocab_size > 151936 {
         fatal.store(true, Ordering::Release);
-        let _ = events.send(snapshot(None, kind::ERROR, code::MODEL_FAILED, None));
+        let _ = deliver(
+            &events,
+            snapshot(None, kind::ERROR, code::MODEL_FAILED, None),
+            String::new(),
+        );
         return;
     }
-    if events
-        .send(snapshot(None, kind::READY, code::OK, None))
-        .is_err()
-    {
+    if !deliver(
+        &events,
+        snapshot(None, kind::READY, code::OK, None),
+        String::new(),
+    ) {
         return;
     }
     let mut generation: Option<GenerationSession<'_>> = None;
+    let mut stream = tokenizer.as_ref().map(ChatTokenizer::text_stream);
+    let admitted_capacity = if tokenizer.is_some() {
+        8
+    } else {
+        model.config().max_tokens
+    };
     let capacity = model.config().max_tokens;
     let stops = tokenizer
         .as_ref()
         .map_or(&[][..], ChatTokenizer::stop_tokens);
     while let Ok(command) = commands.recv() {
+        let mut text = String::new();
         let event = match command {
             Command::Begin(prompt, max_new) => {
                 if generation.as_ref().is_some_and(|g| !g.history().is_empty()) {
@@ -129,7 +149,10 @@ pub(crate) fn run(
                     match ids.and_then(|ids| {
                         if ids.is_empty()
                             || ids.iter().any(|&v| v >= model.config().vocab_size)
-                            || ids.len().checked_add(max_new).is_none_or(|n| n > capacity)
+                            || ids
+                                .len()
+                                .checked_add(max_new)
+                                .is_none_or(|n| n > admitted_capacity)
                         {
                             return None;
                         }
@@ -152,6 +175,7 @@ pub(crate) fn run(
                                 // Pre-admission cancellation preserves the previous empty session.
                                 if !candidate.history().is_empty() {
                                     generation = Some(candidate);
+                                    stream = tokenizer.as_ref().map(ChatTokenizer::text_stream);
                                 }
                                 match result {
                                     Ok(()) => {
@@ -167,7 +191,24 @@ pub(crate) fn run(
             Command::Next => match &mut generation {
                 None => snapshot(None, kind::ERROR, code::INVALID_INPUT, None),
                 Some(g) => match g.next_token(&cancel) {
-                    Ok(Some(token)) => snapshot(Some(g), kind::TOKEN, code::OK, Some(token)),
+                    Ok(Some(token)) => {
+                        let decoded = match &mut stream {
+                            Some(stream) => stream.push(token).map(|s| s.unwrap_or_default()),
+                            None => Ok(format!("{token} ")),
+                        };
+                        match decoded {
+                            Ok(chunk) if chunk.len() <= MAX_TEXT => {
+                                text = chunk;
+                                snapshot(Some(g), kind::TOKEN, code::OK, Some(token))
+                            }
+                            _ => {
+                                let mut failed =
+                                    snapshot(Some(g), kind::ERROR, code::EXECUTION_FAILED, None);
+                                failed.processed = 0; // Worker is terminal; no valid cache exposed.
+                                failed
+                            }
+                        }
+                    }
                     Ok(None) => snapshot(Some(g), kind::STOPPED, code::OK, None),
                     Err(error) => failure(Some(g), error),
                 },
@@ -176,6 +217,7 @@ pub(crate) fn run(
                 if let Some(g) = &mut generation {
                     g.reset();
                 }
+                stream = tokenizer.as_ref().map(ChatTokenizer::text_stream);
                 cancel.store(false, Ordering::Release);
                 snapshot(generation.as_ref(), kind::RESET, code::OK, None)
             }
@@ -191,10 +233,10 @@ pub(crate) fn run(
         if event.code == code::EXECUTION_FAILED {
             // No recovery or valid cache is exposed after execution failures.
             fatal.store(true, Ordering::Release);
-            let _ = events.send(event);
+            let _ = deliver(&events, event, text);
             break;
         }
-        if events.send(event).is_err() {
+        if !deliver(&events, event, text) {
             break;
         }
     }

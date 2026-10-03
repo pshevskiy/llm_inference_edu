@@ -4,6 +4,11 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod worker;
+const MAX_TEXT: usize = 4096;
+struct Delivery {
+    event: Event,
+    text: String,
+}
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -44,7 +49,7 @@ pub struct Event {
 }
 struct Engine {
     commands: SyncSender<Command>,
-    events: Mutex<Receiver<Event>>,
+    events: Mutex<Receiver<Delivery>>,
     cancel: Arc<AtomicBool>,
     fatal: Arc<AtomicBool>,
     busy: AtomicBool,
@@ -113,12 +118,15 @@ fn open(source: Source) -> Result<u64, u32> {
             .is_err()
             {
                 fatal.store(true, Ordering::Release);
-                let _ = panic_events.send(Event {
-                    kind: kind::ERROR,
-                    code: code::PANIC,
-                    token: u32::MAX,
-                    processed: 0,
-                    history: 0,
+                let _ = panic_events.send(Delivery {
+                    event: Event {
+                        kind: kind::ERROR,
+                        code: code::PANIC,
+                        token: u32::MAX,
+                        processed: 0,
+                        history: 0,
+                    },
+                    text: String::new(),
                 });
             }
             // Worker-local model/session have dropped before reservation release.
@@ -150,7 +158,7 @@ fn aligned<T>(pointer: *const T) -> bool {
 /// ABI version is independent of the model and does not allocate.
 #[unsafe(no_mangle)]
 pub extern "C" fn aie_abi_version() -> u32 {
-    1
+    2
 }
 
 /// Copy a tiny JSON (kind0, <=8MiB) or UTF-8 Qwen directory (kind1, <=4096B).
@@ -280,7 +288,45 @@ pub unsafe extern "C" fn aie_poll(handle: u64, out_event: *mut Event) -> u32 {
         // SAFETY: caller grants one aligned writable Event; only writes after
         // complete pointer/handle/event admission, and no foreign borrow retained.
         unsafe {
-            out_event.write(event);
+            out_event.write(event.event);
+        }
+        e.busy.store(false, Ordering::Release);
+        Ok(())
+    })
+}
+/// Poll an event and its bounded UTF-8 presentation chunk atomically.
+/// Invalid descriptors/PENDING preserve all outputs and do not consume an event.
+/// # Safety
+/// All output allocations must be mutually disjoint; out_event/out_length are
+/// aligned and writable for one value. text is writable for exactly MAX_TEXT
+/// bytes. No foreign pointers survive this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aie_poll_text(
+    handle: u64,
+    out_event: *mut Event,
+    text: *mut u8,
+    capacity: usize,
+    out_length: *mut usize,
+) -> u32 {
+    boundary(|| {
+        if !aligned(out_event) || !aligned(out_length) || text.is_null() || capacity != MAX_TEXT {
+            return Err(code::INVALID_INPUT);
+        }
+        let e = engine(handle)?;
+        let delivery = match e.events.lock().map_err(|_| code::PANIC)?.try_recv() {
+            Ok(value) => value,
+            Err(TryRecvError::Empty) => return Err(code::PENDING),
+            Err(TryRecvError::Disconnected) => return Err(code::CLOSED),
+        };
+        // Producer admission guarantees bounded text; this is an internal
+        // invariant, never permission to truncate a generated chunk.
+        assert!(delivery.text.len() <= MAX_TEXT);
+        // SAFETY: caller grants disjoint writable aligned metadata outputs and
+        // 4096 writable bytes. Rust's owned string cannot alias these allocations.
+        unsafe {
+            std::ptr::copy_nonoverlapping(delivery.text.as_ptr(), text, delivery.text.len());
+            out_event.write(delivery.event);
+            out_length.write(delivery.text.len());
         }
         e.busy.store(false, Ordering::Release);
         Ok(())

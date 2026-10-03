@@ -20,7 +20,7 @@ struct InstallationSmoke {
         let source = try decoder.decode(SourceInventory.self, from: Data(contentsOf: URL(fileURLWithPath: "fixtures/qwen-inventory.json")))
         let artifact = try decoder.decode(CPUArtifact.self, from: Data(contentsOf: URL(fileURLWithPath: "fixtures/cpu-native-artifact.json")))
         let actual = CPURecipe(source: source, artifact: artifact)
-        let executable = URL(fileURLWithPath: "docs/evidence/t20-native-smoke")
+        let executable = URL(fileURLWithPath: "target/native/InferenceWorkbench.app/Contents/MacOS/InferenceWorkbench")
         let library = URL(fileURLWithPath: "target/release/libllm_cpu_bridge.a")
         if CommandLine.arguments.contains("--network-small") {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("llm-transfer-\(UUID().uuidString)")
@@ -73,7 +73,7 @@ struct InstallationSmoke {
         // Test-only execution bytes/digests: test hash admission, not inference.
         let testLibrary = Data("offline library fixture".utf8)
         let testExecutable = Data("offline executable fixture".utf8)
-        let testingArtifact = CPUArtifact(id: artifact.id, librarySHA256: digest(testLibrary),
+        let testingArtifact = CPUArtifact(id: artifact.id, librarySHA256: digest(testLibrary), qwenQualified: true,
             executableSHA256: digest(testExecutable), validation: "offline fixtures only; not a qualified model")
         let recipe = CPURecipe(source: tiny, artifact: testingArtifact)
         let data = payloads
@@ -101,6 +101,12 @@ struct InstallationSmoke {
         catch { precondition(error as? InstallFailure == .integrity("execution artifact")) }
         precondition(recipe.compatibility(exact, installation: installed, execution: execution).status == .runnable)
         precondition(actual.compatibility(exact, installation: installed).status == .recipeAvailable) // different payload manifest
+        let pendingArtifact = CPUArtifact(id: testingArtifact.id, librarySHA256: testingArtifact.librarySHA256,
+            qwenQualified: false, executableSHA256: testingArtifact.executableSHA256, validation: "Qwen pending")
+        let pendingRecipe = CPURecipe(source: tiny, artifact: pendingArtifact)
+        let pendingSource = try ModelInstaller.verify(pendingRecipe, directory: installed.directory)
+        let pendingExecution = try ModelInstaller.verifyExecution(pendingArtifact, library: mockLibrary, executable: mockExecutable)
+        precondition(pendingRecipe.compatibility(exact, installation: pendingSource, execution: pendingExecution).status == .recipeAvailable)
         let mlx = try decoder.decode(HubModel.self, from: Data(#"{"id":"other/Qwen-4bit","library_name":"mlx"}"#.utf8))
         let c = actual.compatibility(mlx, installation: installed)
         precondition(c.status == .discoveryOnly && c.source == nil && c.execution == nil)

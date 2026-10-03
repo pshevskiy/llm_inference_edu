@@ -5,6 +5,7 @@ import LLMCPUBridge
 public struct CPUEvent: Sendable {
     public let kind: UInt32
     public let token: UInt32?
+    public let text: String
     public let processed: UInt32
     public let history: UInt32
 }
@@ -25,7 +26,7 @@ public final class CPUClient: @unchecked Sendable {
     private var closed = false
 
     public init(kind: UInt32, payload: Data) throws {
-        guard aie_abi_version() == 1 else { throw CPUFailure(code: UInt32(AIE_INVALID_INPUT)) }
+        guard aie_abi_version() == 2 else { throw CPUFailure(code: UInt32(AIE_INVALID_INPUT)) }
         var identifier: UInt64 = 0
         let code = payload.withUnsafeBytes { bytes in
             aie_open(kind, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &identifier)
@@ -53,13 +54,18 @@ public final class CPUClient: @unchecked Sendable {
                 result = .failure(CPUFailure(code: code))
             } else {
                 let deadline = DispatchTime.now().uptimeNanoseconds + 60_000_000_000
+                var text = [UInt8](repeating: 0, count: 4096)
                 while true {
                     var event = AieEvent()
-                    let status = aie_poll(self.handle, &event)
+                    var count = 0
+                    let status = text.withUnsafeMutableBufferPointer { buffer in
+                        aie_poll_text(self.handle, &event, buffer.baseAddress, buffer.count, &count)
+                    }
                     if status == UInt32(AIE_OK) {
                         if event.kind == UInt32(AIE_ERROR) { result = .failure(CPUFailure(code: event.code)) }
                         else { result = .success(CPUEvent(kind: event.kind,
                             token: event.token == UInt32.max ? nil : event.token,
+                            text: String(decoding: text.prefix(count), as: UTF8.self),
                             processed: event.processed, history: event.history)) }
                         break
                     }

@@ -47,7 +47,7 @@ fn close(handle: u64) {
 #[test]
 fn public_abi_layout_and_pre_admission_outputs_are_preserved() {
     let _serial = SERIAL.lock().unwrap();
-    assert_eq!(aie_abi_version(), 1);
+    assert_eq!(aie_abi_version(), 2);
     assert_eq!(size_of::<Event>(), 20);
     assert_eq!(align_of::<Event>(), 4);
     let mut h = 99;
@@ -250,5 +250,70 @@ fn post_kv_write_numerical_failure_has_no_valid_prefix_or_resume() {
     );
     assert_eq!(aie_next(h), code::EXECUTION_FAILED);
     assert_eq!(aie_reset(h), code::EXECUTION_FAILED);
+    close(h);
+}
+
+#[test]
+fn text_poll_is_atomic_bounded_and_preserves_invalid_outputs() {
+    let _serial = SERIAL.lock().unwrap();
+    let h = ready();
+    let ids = [1, 5, 7];
+    // SAFETY: bounded readable aligned IDs.
+    assert_eq!(unsafe { aie_begin_ids(h, ids.as_ptr(), 3, 4) }, code::OK);
+    assert_eq!(wait(h).kind, kind::STARTED);
+    assert_eq!(aie_next(h), code::OK);
+    let mut out = event();
+    let mut bytes = [99_u8; MAX_TEXT];
+    let mut length = 99;
+    // SAFETY: all outputs are disjoint live allocations; invalid capacity is
+    // rejected before reads/writes or event consumption.
+    assert_eq!(
+        unsafe { aie_poll_text(h, &mut out, bytes.as_mut_ptr(), MAX_TEXT - 1, &mut length) },
+        code::INVALID_INPUT
+    );
+    assert_eq!(out, event());
+    assert_eq!(bytes, [99; MAX_TEXT]);
+    assert_eq!(length, 99);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        // SAFETY: disjoint writable Event/usize and 4096-byte allocation.
+        let code = unsafe { aie_poll_text(h, &mut out, bytes.as_mut_ptr(), MAX_TEXT, &mut length) };
+        if code == code::OK {
+            break;
+        }
+        assert_eq!(code, code::PENDING);
+        assert_eq!(out, event());
+        assert_eq!(length, 99);
+        assert_eq!(bytes, [99; MAX_TEXT]);
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(out.token, 41);
+    assert_eq!(&bytes[..length], b"41 ");
+    assert!(bytes[length..].iter().all(|&b| b == 99));
+    close(h);
+}
+
+#[test]
+fn cancellation_before_prompt_admission_can_clear_and_retry() {
+    let _serial = SERIAL.lock().unwrap();
+    let h = ready();
+    assert_eq!(aie_set_cancel(h, 1), code::OK);
+    let ids = [1, 5, 7];
+    // SAFETY: bounded aligned readable IDs copied during call.
+    assert_eq!(unsafe { aie_begin_ids(h, ids.as_ptr(), 3, 4) }, code::OK);
+    let cancelled = wait(h);
+    assert_eq!(
+        (cancelled.kind, cancelled.processed, cancelled.history),
+        (kind::CANCELLED, 0, 0)
+    );
+    assert_eq!(aie_set_cancel(h, 0), code::OK);
+    // SAFETY: same live readable IDs, previous cancellation retained no prompt.
+    assert_eq!(unsafe { aie_begin_ids(h, ids.as_ptr(), 3, 4) }, code::OK);
+    let admitted = wait(h);
+    assert_eq!(
+        (admitted.kind, admitted.processed, admitted.history),
+        (kind::STARTED, 3, 3)
+    );
     close(h);
 }

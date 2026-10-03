@@ -18,7 +18,7 @@ verification checks actual archive/executable bytes against their expected
 hashes and executable permissions; copied metadata alone is insufficient.
 These capabilities describe verification at that point in time, not immunity
 to later filesystem changes. The Rust loader still checks source assets at load.
-The artifact record is tied to the tested T20 Mac build, not every future build.
+The artifact record is tied to the reviewed native Mac build (T24 supersedes the T20 baseline), not every future build.
 A rebuilt executable/archive needs its own qualification and reviewed digest.
 
 Execution order:
@@ -70,7 +70,7 @@ not test cancellation during a sustained large download or actual1GB network
 installation; those are not run.
 
 `--local` stages/reuses the already-downloaded source at
-`models/installed-qwen/<revision>` and checks the recorded T20 execution files.
+`models/installed-qwen/<revision>` and checks the recorded native workbench execution files.
 It requires those exact ignored qualification artifacts on this tested Mac;
 fresh clones/new builds get recipe-available until independently qualified.
 The installed source was subsequently loaded by the checked native executable

@@ -3,7 +3,9 @@ import Dispatch
 import Foundation
 import LLMCPUBridge
 
+#if !WORKBENCH
 @main
+#endif
 struct BoundarySmoke {
     static func checked(_ result: Result<CPUEvent, CPUFailure>, kind: UInt32) -> CPUEvent {
         dispatchPrecondition(condition: .onQueue(.main))
@@ -12,7 +14,9 @@ struct BoundarySmoke {
         return event
     }
     static func main() throws {
-        let args = CommandLine.arguments
+        try run(CommandLine.arguments)
+    }
+    static func run(_ args: [String]) throws {
         precondition(args.count == 3 && ["tiny", "qwen"].contains(args[1]))
         let real = args[1] == "qwen"
         let payload = real ? Data(args[2].utf8) : try Data(contentsOf: URL(fileURLWithPath: args[2]))
@@ -32,7 +36,13 @@ struct BoundarySmoke {
                     precondition(event.processed == promptCount && event.history == promptCount)
                     advance(client, expected, promptCount, index: 0)
                 }
-                if real { precondition(client.begin(text: "Hello!", maxNew: 4, completion: completion)) }
+                if real {
+                    precondition(client.begin(text: "Hello! Hello! Hello! Hello!", maxNew: 4) { rejected in
+                        guard case let .failure(error) = rejected else { fatalError("unqualified context admitted") }
+                        precondition(error.code == UInt32(AIE_INVALID_INPUT))
+                        precondition(client.begin(text: "Hello!", maxNew: 4, completion: completion))
+                    })
+                }
                 else { precondition(client.begin(ids: [1, 5, 7], maxNew: 4, completion: completion)) }
             })
         })
@@ -70,8 +80,10 @@ struct BoundarySmoke {
         precondition(client.next { result in
             let event = checked(result, kind: UInt32(AIE_TOKEN))
             precondition(event.token == expected[index])
+            let expectedChunks = expected[0] == 358 ? [" I", "'m", " a", " beginner"] : ["41 ", "53 ", "41 ", "50 "]
+            precondition(event.text == expectedChunks[index])
             precondition(event.processed == prompt + UInt32(index) && event.history == event.processed + 1)
-            print("token=\(event.token!) processed=\(event.processed) history=\(event.history)")
+            print("token=\(event.token!) processed=\(event.processed) history=\(event.history) text=\(String(reflecting: event.text))")
             advance(client, expected, prompt, index: index + 1)
         })
     }

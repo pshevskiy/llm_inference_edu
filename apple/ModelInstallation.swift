@@ -13,6 +13,7 @@ struct SourceInventory: Codable, Sendable, Equatable {
 struct CPUArtifact: Codable, Sendable, Equatable {
     let id: String
     let librarySHA256: String
+    let qwenQualified: Bool
     let executableSHA256: String
     let validation: String
 }
@@ -46,7 +47,7 @@ struct CPURecipe: Sendable {
         }
         return ModelCompatibility(discovered: identity,
             source: ModelIdentity(repository: source.repository, revision: source.revision), execution: artifact,
-            status: installation?.matches(self) == true && execution?.artifact == artifact ? .runnable : .recipeAvailable,
+            status: installation?.matches(self) == true && execution?.artifact == artifact && artifact.qwenQualified ? .runnable : .recipeAvailable,
             explanation: "Rust FP32 CPU on the qualified Mac; C32 allocated, only short ≤8-position real-model checks qualified. ANE and iPhone unqualified.")
     }
     func validate() throws -> UInt64 {

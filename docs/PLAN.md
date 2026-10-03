@@ -1428,7 +1428,64 @@ Y = [[-2, 4], [-2, 13]]
   admission→stage→fetch→verify→publish, failed-tokenizer cleanup trace and one
   unsolved MLX/base-model identity exercise. Next: T24 minimal native Mac UI.
 
-- [ ] **T24 — Minimal native UI.** Add search, installed-model details, local chat, cancellation/unload, context budget, and diagnostics. Disclose execution policy and validation status. Run offline after installation. Keep inference math outside SwiftUI.
+- [x] **T24 — Minimal native UI.** Add search, installed-model details, local chat, cancellation/unload, context budget, and diagnostics. Disclose execution policy and validation status. Run offline after installation. Keep inference math outside SwiftUI.
+
+
+**T24 completion record — 2026-10-03**
+
+- **Status:** minimal native Mac workbench implemented; owner review pending.
+  Search/Models/Chat/Diagnostics, explicit install/load, offline local generation,
+  pause/resume, unload/reset, source/execution verification and visible budgets.
+  Plain-prompt single-turn UI; no hidden multi-turn truncation/template or agent
+  capability. ANE, signed distribution, iPhone/iPad remain unqualified.
+- **Files:** `apple/WorkbenchApp.swift`, `WorkbenchStateSmoke.swift`,
+  `BuildMetadata.swift`, `build-workbench.sh`, ABI2bridge/header, CPUClient,
+  BoundarySmoke, artifact/installer qualification checks, README/lesson24 and
+  necessary lesson23 current-artifact follow-up. Rust numerical crate/math remains
+  unchanged and forbids unsafe. No dependency/toolchain/account/signing change.
+- **Boundary/resources:** Rust TextStream owns decoding and withheld UTF8; one
+  bounded Delivery carries Event+≤4096UTF8bytes. `aie_poll_text` validates exact
+  caller capacity/disjointoutputcontracts before atomically consuming/copying;
+  invalid/Pending preserves all outputs. Old metadata Event shape20B retained,
+  ABIversion2. Swift one4KiB scratch/request, no per-poll model/text copies.
+  Qwen worker admission is now8totalpositions before prefill, whileC32cache
+  allocation and existing enginequalification stay unchanged. Tiny remainsC32.
+  Outputlimit1–4; no fallback/precision switch/quiet context rollover. Epochs
+  reject callbacks after unload; actual model release remains asynchronous.
+- **Artifact gate:** each new bundle records actual archive/executable digests
+  and starts with Qwenqualificationfalse. Only explicit already-local Qwen
+  parity/lifecycle success sets ittrue; verified bytes alone cannot enable a
+  pending build. Bundled artifact and reviewed small fixture supersede T23's
+  T20binary fingerprint with this exact UIbuild; rebuilds need their own checks.
+  Ordinary build is tiny-only, noautomaticdownload. All binaries/resources/model
+  storage remain ignored undertarget/models; private prompts stayinRAM.
+- **Commands/results:** `apple/build-workbench.sh
+  models/installed-qwen/7ae557604adf67be50417f59c2c2f167def9a775` exit0. Installed
+  Swift6 targetMac26.5, warnings-as-errors, releasestaticlib; tiny native exact
+  `[41,53,41,50]`, Qwen `[358,2776,264,48948]`, counts/cancel/resume/reset exact.
+  Checks also reject oversizedUTF8 and Qwenprompts beyond8positions beforevalid
+  retry, and assert boundedtextchunks. Independent pinned tokenizer decoding
+  equals ` I'm a beginner`; no numerical tolerance change. UIcontroller smoke
+  exit0 tests cancel→immediatereplacement, stale-response exclusion, empty-history
+  pause→resume→validsend, syntheticgeneration/reset, badIDrejection and unload.
+  Native installer offline regression confirms qualifiedfalse neverRunnable even
+  with matchingverifiedsource+execution. Full fmt/Clippywarningsdenied/cargotest
+  offline exit0:99unit/integration,0doc tests (8bridge+91existing).
+- **GUI evidence:** Computer Use skill inspected actual final app. Search returns
+  multiplepublishers labeled discoveryonly; Models shows pinnedsource/current
+  executionverified. Tiny visibleanswer`41 53 41 50`, evaluated6/history7.
+  QwenloadreachesReady and actual Send shows` I'm a beginner`, evaluated5/history6.
+  No download during GUIcheck; appclosed afterward toreleaseworker. Ignored
+  `t24-tiny-ui.png`, `t24-qwen-ui.{png,txt}`, `t24-build.txt`,
+  `t24-independent-text.txt`, `t24-install-{build,offline}.txt`,
+  `t24-bridge-tests.txt` and `t24-{fmt,clippy,test}.txt`. GUIpause timing was not
+  manually qualified; cancellation is covered by native/controller regressions.
+  Large network installation/mobile/backgrounding/energy tests stillnotrun.
+- **Review/learning:** Astra identified empty-history Resume dead-end and delayed
+  generic cancellation affecting replacements; fixed with direct stored-task
+  cancellation, emptyhistoryresume and regressions. Lesson24 explains
+  startup→load→prefill→atomictoken/text→pause/reset/unload, Qwen2/3→5/6trace and
+  one unsolved last-token/pause exercise. Next: T25 boundedagentcontinuation.
 
 **Gate:** The search requirement works without falsely promising that every MLX result runs on ANE or in our Rust loader.
 

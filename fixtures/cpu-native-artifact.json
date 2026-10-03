@@ -1,6 +1,7 @@
 {
-  "id": "rust-cpu-fp32-c32-v1",
-  "librarySHA256": "57f648a6148dcf65d485faeff8591a1130840f8fbf4359e64d191bff0439096e",
-  "validation": "T20 Mac M1 Pro native tiny/Qwen parity and lifecycle smoke; Rust CPU FP32 C32 allocated, only short <=8-position pretrained numerical qualification; ANE/iPhone unqualified",
-  "executableSHA256": "9c65de6122ec0f225c18490a74f4d027b6e59a205f750d076eaaef983ec73890"
+  "executableSHA256" : "0b410f6dbc61cfdc2c2ff9fbde66b77073e94bdbf7528983ba87c7e9bded7f42",
+  "id" : "rust-cpu-fp32-c32-v1",
+  "librarySHA256" : "f01d0eeeb6ba7dc5a1456bcc18ea07a7b0b7c0ef2a527d96f10a8e5664773c46",
+  "qwenQualified" : true,
+  "validation" : "Mac native tiny\/Qwen parity and lifecycle smoke passed for this build; Rust numerical engine retains short ≤8-position FP32 qualification. ANE\/iPhone unqualified."
 }

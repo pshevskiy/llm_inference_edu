@@ -5,7 +5,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* ABI1. IDs never reused. Only one live/loading/closing model worker.
+/* ABI2. IDs never reused. Only one live/loading/closing model worker.
  * Caller owns all memory. Inputs must be readable for their explicit length;
  * typed pointers must be aligned; outputs writable and disjoint from inputs.
  * Rust copies inputs during the call and retains no foreign pointers.
@@ -47,6 +47,14 @@ uint32_t aie_set_cancel(uint64_t handle, uint32_t enabled);
 /* Nonblocking. OK writes one event and opens command admission;
  * PENDING/error leaves out_event unchanged. */
 uint32_t aie_poll(uint64_t handle, AieEvent *out_event);
+/* ABI2: atomically poll metadata plus UTF8 chunk. Output allocations must be
+ * mutually disjoint, metadata aligned; text capacity must be exactly4096.
+ * PENDING/errors leave all outputs untouched and consume no event. Only first
+ * out_length bytes are written; output is not NUL terminated. Tiny emits IDs.
+ * Plain real prompts+output are capped at8positions until larger qualification.
+ */
+uint32_t aie_poll_text(uint64_t handle, AieEvent *out_event,
+    uint8_t *text, size_t capacity, size_t *out_length);
 /* Nonblocking invalidation; actual model release is asynchronous. New opens
  * return BUSY until the closing worker has released its model/session. */
 uint32_t aie_close(uint64_t handle);

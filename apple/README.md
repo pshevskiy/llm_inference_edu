@@ -54,3 +54,14 @@ actual execution-byte verification; MLX search results remain discovery-only.
 `InstallationSmoke.swift` has small offline fixtures, optional LICENSE-only
 `--network-small`, and an opt-in `--local` existing-source check tied to the
 recorded Mac artifacts. See [lesson23](../docs/lessons/23-installation.md).
+
+## Mac workbench
+
+Build `apple/build-workbench.sh`; the app appears at
+`target/native/InferenceWorkbench.app`. Optional first argument supplies an
+already-local pinned Qwen directory and enables real native qualification;
+ordinary builds qualify only the tiny demo. Both run offline UI-controller
+regressions. Open the app in Finder for search, explicit installation/load,
+short plain-prompt chat, pause/resume, unload/reset and diagnostics. Full build
+contract, eight-position admission and artifact verification are in
+[lesson24](../docs/lessons/24-workbench.md). No iOS/signing claim.
