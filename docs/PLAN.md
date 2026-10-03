@@ -1145,7 +1145,85 @@ Y = [[-2, 4], [-2, 13]]
   Lesson18 givesexecutionorder, pairedvaluetrace/slottrace and unsolvedexercise.
   **Next:** T19 public CPU+ANE policy/placement qualification; repeatedperformance
   remainsowneropt-in pending, allowedANE alone is notplacementproof.
-- [ ] **T19 — Placement and end-to-end experiment.** Explicitly allow CPU + Neural Engine and exclude GPU inference. Compare CPU-only Core ML, CPU+ANE Core ML, and our CPU implementation with identical inputs and disclosed precision. Capture Core ML performance reports/available traces. Attribute actual expensive work; “ANE allowed” and supported/preferred-device metadata alone do not establish measured ANE execution.[^compute-units][^coreml-profile]
+- [x] **T19 — Placement and end-to-end experiment.** Explicitly allow CPU + Neural Engine and exclude GPU inference. Compare CPU-only Core ML, CPU+ANE Core ML, and our CPU implementation with identical inputs and disclosed precision. Capture Core ML performance reports/available traces. Attribute actual expensive work; “ANE allowed” and supported/preferred-device metadata alone do not establish measured ANE execution.[^compute-units][^coreml-profile]
+
+  **Implemented experiment — 2026-10-03; ANE acceleration qualification blocked;
+  owner review pending.** The negative decision completes this experiment, not
+  the M6 acceleration gate. Keep our Rust CPU engine; do not select an ANE backend.
+  The owner's “do it autonomously” explicitly authorizes the previously requested
+  bounded repeated hardware tests. No GPU, global developer-path changes or
+  additional toolchain installation. Actual M1 Pro16GB/macOS26.6.2/build25G83,
+  Xcode27.0/build27A266a; one model process at a time.
+
+  **Files:** `examples/policy_trace.rs`, `reference/coreml_policy.py`,
+  `reference/coreml_benchmark.py`, `reference/coreml_trace.swift`,
+  `reference/analyze_coreml_trace.py`, two portable Python test files,
+  `docs/experiments/19-policy-audit.md`, `docs/lessons/19-placement.md`.
+  Existing Rust benchmark and production numerical code reused unchanged.
+  No new dependencies or production native boundary.
+
+  **Interface and quality:** reduce only T18 public output lists from49 to logits;
+  restore those lists and compare protobuf equality, then verify identical weight
+  bytes. Same FP32 weights/compute, native pairedFP16 cache vs RustFP32 cache,
+  capacity32. An independent pinned HF CPU FP32 oracle covers original cases plus
+  complete teacher-forced/greedy/continuation histories. All3paths qualify24logit
+  positions under unchanged T06 gates; worst fractions Rust.23070911,
+  native.58195120, all argmax IDs exact. Every measured sample matches oracle
+  emitted IDs, EOS, processed counts and pending-token invariants.
+
+  **Matched short measurements:** public `benchmarks/qwen-short.json`,2prompt
+  tokens,4outputs,2continuation tokens,3warmups+10repetitions per mode/path.
+  Median warm greedy TTFT Rust/CPU_ONLY/CPU_AND_NE651.074/73.371/73.895ms;
+  decode3.067/27.521/27.589tokens/s; continuation976.034/108.704/108.346ms.
+  Raw min/max/MAD retained, no p95 or statistical equivalence claim. Reset/load/
+  tokenization excluded; request spans prefill, greedy sampling and UTF-8 chunk
+  preparation. Backend-only timing separate. Python bridge/policy vs Rust policy,
+  tokenizer versions0.20.3/0.21.4, thread policy and cache precision disclosed.
+  Warmups include lazy initialization; filesystem caches uncontrolled; fixed
+  backend order. No long-context/mobile/product-wide speed qualification.
+
+  **Memory/resources:** logical weights1,976,131,072B and per-session KV786,432B
+  for both paths; paired half saves no KV bytes. Child peakRSS Rust/CPU_ONLY/
+  CPU_AND_NE3,054,485,504/5,463,293,952/5,388,337,152B; footprint
+  3,054,160,656/318,477,472/323,949,584B. Native peaks include imports and later
+  compute-plan inspection/mappings; compiler/runtime services not attributed.
+  These are not engine payload or whole-system memory. AC power snapshots;
+  `pmset` supplied no recorded thermal/performance state, so thermal qualification
+  and calibrated energy remain unavailable. Paths finished75.22/28.08/30.98s
+  within180s caps; preparation capped240s, owned child group terminated on timeout.
+
+  **Observed placement:** Swift public signposts work (tiny8unique events;
+  matched Qwen18events/eight synchronous prediction intervals, all8greedy checks).
+  Qwen trace has330sampled Core ML prediction stacks,325with BNNS CPU execution,
+  all325inside our marked prediction intervals. This attributes observed graph
+  execution to CPU. Counts are not wall-time percentages, exclusive CPU placement
+  or individual operator-device proof. Core ML/ANE framework tables remain empty
+  in Python and Swift; recording reports `Data stream: Time Mapping`. Exact cause
+  remains unresolved; no zeroANE inference. Lean anticipated plan2280CPU-preferred,
+  2266unknown (2254constants+12reshape/transpose), noNE preference. Allowing NE
+  showed no useful improvement in this short test; ANE acceleration is unqualified.
+
+  **Commands/evidence:** release build of `policy_trace` and `benchmark`;
+  `reference/.venv/bin/python reference/coreml_benchmark.py run docs/evidence/t18-qwen
+  docs/evidence/t19-benchmark-v1` completed all sequential phases. Public Swift
+  control built with installed Xcode `swiftc -O -g`; xctrace record/export and
+  `analyze_coreml_trace.py` commands documented in lesson19. Ignored
+  `t19-benchmark-v1/` holds artifact/reference identities, logits,20rawsamples/path,
+  logs, comparison/completion; `t19-control/` holds actual binaries/hash identities,
+  traces/XML, greedy stdout and correlated CPU analysis. Earlier `t19-final`,
+  `t19-instruments` and license-readiness evidence retained as history. Large
+  artifacts and incidental trace process/device metadata stay out of Git.
+
+  **Verification:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  passed88integration+3unit tests. Python syntax and9portable Python tests passed.
+  Logs `t19-{fmt,clippy,test}-final.txt`, `t19-python-final.txt` and
+  `t19-benchmark-build.txt`. Astra reviews cover implementation, contracts,
+  benchmark evidence and trace attribution; owner review remains pending.
+  Lesson19 explains execution order, pending `[358,2776,264,48948]` trace and
+  one bounded unsolved exercise. **Next:** T20 CPU native boundary; optional ANE
+  retry needs a newly qualified artifact and healthy framework attribution,
+  rather than representing this CPU result as an accelerator.
 
 **Important boundary:** MLX documents CPU/GPU execution; it is not our ANE execution route.[^mlx] Core ML permits CPU+ANE without GPU, but does not promise every operation runs on ANE.[^compute-units] Apple's transformer deployment guidance supplies experiments involving layouts, copies, and bandwidth—not universal performance guarantees.[^ane]
 
