@@ -1286,6 +1286,38 @@ Y = [[-2, 4], [-2, 13]]
 
 - [ ] **T21 — Physical iPhone 14 validation.** Build and sign with the owner's development setup; never modify account/signing credentials automatically. First run synthetic parity, then a short real-model generation with a measured admission budget. Test load/unload, memory pressure behavior, cancellation, background/foreground transitions, and sustained runs. Stop/suspend predictably when execution cannot continue. Label simulator/build-only results separately from physical-device results.
 
+
+**T21 readiness record — 2026-10-03**
+
+- **Status:** blocked; physical validation/build/signing not run, owner review
+  pending. T21 remains unchecked. No phone compatibility or resource claim.
+- **Files:** `docs/lessons/21-device-validation.md` and this ticket record only.
+  No iOS scaffold, account changes or automatic target installation.
+- **Actual checks:** `rustup target list --installed` exit0: Mac arm64, WASI,
+  Linuxmusl only, no`aarch64-apple-ios`. `xcode-select -p` exit0 now selects
+  `/Applications/Xcode.app/Contents/Developer` (owner/external change; this task
+  did not set it). Installed `xcodebuild -version` exit0 Xcode27.0/build27A266a;
+  `xcrun --sdk iphoneos --show-sdk-version` exit0 SDK27.0. Installed absolute
+  `devicectl list devices` returned no output by15s; owned group killed, device
+  availability unknown. Earlier enumeration/help commands interrupted, not
+  left running. Ignored `t21-readiness.json`, `t20-device-readiness.txt`.
+- **Not run:** iOS Rust cross-build (target missing; original instruction says
+  do not install toolchains automatically), signed app build/install, synthetic
+  physical parity, real-model admission, load/unload/memory-pressure,
+  cancellation/backgrounding/foregrounding, sustained phone tests. No signing
+  credential access. Mac success is explicitly separate.
+- **Follow-up:** check connected/trusted Developer Mode iPhone14 in Xcode
+  Window→Devices and Simulators because CLI enumeration hangs; choose/prepare
+  owner signing setup and explicitly authorize target setup. Once target exists,
+  `cargo build --locked --release -p llm_cpu_bridge --target aarch64-apple-ios`
+  is the first build check, not a claimed completed build. Lesson21 gives exact
+  read-only checks, staged validation/budget protocol, proposed3/4pending-token
+  trace and one bounded unsolved exercise.
+- **Ordinary checks:** documentation-only ticket; no new tests. T20's full
+  workspace checks remain passed, not rerun as phone validation. Astra reviewed
+  the readiness record and qualification boundaries before commit. Next
+  independent ticket: T22 Hub discovery on Mac; phone gate remains blocked.
+
 **Ownership decision:** Rust owns tokenization integration, token history, sampling, and policies. CPU sessions own Rust KV storage; Core ML sessions own native state. A thin native driver may invoke the shared Rust generation policy and the selected execution path. Do not duplicate the production sampler or keep two complete model copies just to cross the language boundary. Finalize this small contract from the working implementations, not from speculative traits.
 
 **Gate:** Same numerical/generation contracts across paths, with declared exceptions. Desktop success does not certify the phone. iPad remains unqualified until a device is actually tested.
