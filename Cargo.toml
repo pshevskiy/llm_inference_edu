@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 
+[workspace]
+members = ["apple/cpu_bridge"]
+default-members = [".", "apple/cpu_bridge"]
+resolver = "3"
+
 [features]
 default = []
 # Development reproduction of T16's rejected pretrained INT8 experiment.

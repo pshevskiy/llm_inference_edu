@@ -1231,7 +1231,59 @@ Y = [[-2, 4], [-2, 13]]
 
 ### M7 — Native integration and iPhone 14 checks
 
-- [ ] **T20 — Native boundary and one execution worker.** Add the smallest Swift integration that runs our CPU engine. Use opaque handles and explicit buffer/error ownership; prevent panics crossing FFI. The boundary is a request/chunk/token step, not individual transformer operators. Cancellation is explicit and event delivery bounded. Keep heavy work off the UI thread. Add Core ML as a second concrete path only after T19; keep its state native, not mirrored in a second Rust cache.
+- [x] **T20 — Native boundary and one execution worker.** Add the smallest Swift integration that runs our CPU engine. Use opaque handles and explicit buffer/error ownership; prevent panics crossing FFI. The boundary is a request/chunk/token step, not individual transformer operators. Cancellation is explicit and event delivery bounded. Keep heavy work off the UI thread. Add Core ML as a second concrete path only after T19; keep its state native, not mirrored in a second Rust cache.
+
+**T20 completion record — 2026-10-03**
+
+- **Status:** CPU native boundary implemented; owner review pending. Core ML
+  second path remains unqualified after T19; no production ANE acceleration.
+- **Files:** workspace/package lock plus `apple/cpu_bridge` concrete staticlib,
+  C header/module map, `apple/CPUClient.swift`, `apple/BoundarySmoke.swift`,
+  `apple/README.md`, and `docs/lessons/20-native-boundary.md`. The new wrapper
+  reuses existing engine/serde_json; no new external dependency. Numerical
+  package retains `forbid(unsafe_code)`; bounded FFI pointer operations live only
+  in the wrapper, with explicit allocation/alignment/lifetime safety contracts.
+- **Ownership/mechanism:** checked never-reused integer handles; one process-wide
+  worker reservation survives nonblocking close until actual model release.
+  Rust owns model/tokenizer/session, bounded copied inputs, one command and one
+  response. Swift rejects excess requests until main delivers the current event.
+  Loading, tokenization and numerical work stay off main. Swift UTF-8 conversion
+  is admitted first, then scans/copies at most65,537bytes off main and rejects
+  oversize. Atomic cancellation is independent of the command queue; resume is
+  explicit. Token-boundary cancellation preserves exact prefix/history; partial
+  numerical failure/panic is terminal. FFI catchers do not recover invalid
+  arbitrary pointers, OOM, aborts or signals. Polling has a60s client deadline.
+- **Commands/results:** `cargo fmt --all -- --check`,
+  `cargo clippy --offline --all-targets -- -D warnings`, `cargo test --offline`
+  all exit0; original91unit/integration tests plus6bridge tests (97total), and one
+  existing documentation test pass. Bridge tests cover
+  ABI/output preservation, tiny parity/cancel/resume/reset, invalid descriptors,
+  single-worker admission, stale IDs, deterministic close during active work,
+  initialization failure/panic and hand-built post-KV numerical failure.
+  `cargo build --offline --release -p llm_cpu_bridge` exit0. Xcode27 Swift6
+  `swiftc -target arm64-apple-macosx26.5 -swift-version 6 -warnings-as-errors
+  -O -g -parse-as-library` links the staticlib/header and both Swift files;
+  final build exit0 with no diagnostics. Exact reproducer in `apple/README.md`.
+  The explicit Mac26.5 floor matches existing tokenizer objects; an initial
+  default26.0 link emitted deployment warnings and was replaced, not silenced.
+  No global developer-path/signing/toolchain change.
+- **Native checks:** tiny and pinned local Qwen run sequentially under60s
+  deadlines, exit0 in0.591s/6.985s respectively (end-to-end smoke durations,
+  not throughput benchmarks). Tiny IDs `[41,53,41,50]`; Qwen plain `Hello!`
+  IDs `[358,2776,264,48948]`, all exact. Both check main-queue callbacks,
+  backpressure, oversized UTF-8 rejection then valid admission, cancellation,
+  resume, reset and pending-token counters. No reference tolerances changed.
+  Short Qwen qualification remains the previous narrow contract, not full C32.
+- **Evidence:** ignored `docs/evidence/t20-{fmt,clippy,test}.txt`,
+  `t20-bridge-tests.txt`, `t20-rust-build.txt`, `t20-swift-build.txt`, native
+  binary and `t20-{tiny,qwen}-smoke.txt`. Mac host remains M1Pro16GB/macOS26.6.2.
+  iOS/physical phone/suspension/memory-pressure checks are not run in T20.
+- **Review/explanation:** Astra reviewed Rust and Swift and requested close/failure
+  coverage plus bounded off-main text copying; all addressed. Lesson20 explains
+  execution order, trace Started3/3 → emit41at3/4 → cancelled3/4 → emit53at4/5,
+  and one unsolved response-backpressure exercise. Owner understanding/review
+  stays pending. Next: T21 device readiness/physical validation.
+
 - [ ] **T21 — Physical iPhone 14 validation.** Build and sign with the owner's development setup; never modify account/signing credentials automatically. First run synthetic parity, then a short real-model generation with a measured admission budget. Test load/unload, memory pressure behavior, cancellation, background/foreground transitions, and sustained runs. Stop/suspend predictably when execution cannot continue. Label simulator/build-only results separately from physical-device results.
 
 **Ownership decision:** Rust owns tokenization integration, token history, sampling, and policies. CPU sessions own Rust KV storage; Core ML sessions own native state. A thin native driver may invoke the shared Rust generation policy and the selected execution path. Do not duplicate the production sampler or keep two complete model copies just to cross the language boundary. Finalize this small contract from the working implementations, not from speculative traits.

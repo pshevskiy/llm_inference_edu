@@ -1,0 +1,4 @@
+module LLMCPUBridge {
+    header "llm_cpu_bridge.h"
+    export *
+}
