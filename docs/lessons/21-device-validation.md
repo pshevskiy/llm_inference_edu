@@ -7,11 +7,13 @@ outstanding request. UI refreshes never copy the model or evaluate tensors.
 The first app bundles the small synthetic model rather than pretrained weights.
 
 Read `apple/iphone/README.md` for the Xcode project and exact follow-up commands.
-On 2026-10-04, Swift 6 source typechecking passed against the simulator and
-physical iOS SDKs. Controller integration checks passed against the real Rust
-bridge **on the Mac**. Xcode project loading failed because CoreSimulator is
-missing, and neither Rust iOS target is installed. No simulator executable was
-linked or run; no phone was signed, installed or tested. Owner review is pending.
+On 2026-10-04, owner-approved Rust iOS targets, Xcode components and iOS27.0
+arm64 runtime were installed. Release platform builds pass; the phone build is
+unsigned. Both Simulator UI tests and 115 Rust numerical/bridge tests pass on
+the actual M1Pro16GiB Mac running macOS26.6.2 and Xcode27.0. The simulated
+iPhone14 runs iOS27.0/build24A434. Mac controller integration also passes.
+No physical phone is connected; signing, phone memory/thermal measurements and
+real-model qualification are not run. T21 and owner review remain pending.
 
 ## The central controller in execution order
 
@@ -36,6 +38,17 @@ linked or run; no phone was signed, installed or tested. Owner review is pending
    can report busy until the old worker releases its reservation. Memory warnings
    call this same close-and-clear path. Cleared counters do not claim a valid K/V
    prefix or a resumable transcript.
+7. Fatal failures clear displayed cache counters and tokens, disable further
+   execution, and keep the screen Failed until recovery. Pause retains actual
+   counters; failure does not imply that the last observed prefix is still valid.
+   Scene transitions cannot replace Failed with an apparently resumable Paused.
+
+The window's view observes scene phase and the controller publishes activity,
+so an activity change refreshes button admission. Reading an unobserved flag
+can leave Load disabled despite an active scene. Counter labels use verbatim
+text so interpolation visibly preserves both numerical values. The Debug-only
+memory-warning button posts the public UIKit notification; passing its listener
+test is separate from actual OS pressure or physical memory release.
 
 This follows mechanical sympathy by keeping numerics off the screen thread,
 reusing the existing worker/cache, preventing request backlogs, and avoiding
@@ -58,8 +71,8 @@ The independently checked tiny fixture emits `[41,53,41,50]`:
 | Reset | 0 | 0 | empty |
 
 The last emitted token stays pending at the output limit. A pause must not
-pretend that it was evaluated or advance counters. This trace passed on the Mac
-controller; it remains an expected trace for simulator and physical tests.
+pretend that it was evaluated or advance counters. This trace passed in both the Mac
+controller and Simulator UI tests; it remains expected for physical tests.
 
 ## Why two arm64 libraries?
 
@@ -84,7 +97,7 @@ phone budget. If it does not fit, report blocked rather than changing model,
 precision or history silently. Record phone/OS, thermal/power state, memory
 signals and bounded repeated-run counters; label unavailable measurements.
 
-Exercise: backgrounding occurs after emitting `41` at prefix/history `3/4`, then
-a memory warning closes the session. Which counters should the screen show,
-and can tapping Load resume using the old K/V? Explain the difference between
-a displayed token list and valid cache storage. Do not implement the answer yet.
+Exercise: a token request captures epoch 12. Unload advances it to 13, and a
+new Load advances it to 14. The response from epoch 12 arrives afterward.
+Should it change the current screen? Identify the guard that decides this and
+explain why matching token IDs would not be enough. Do not implement the answer.

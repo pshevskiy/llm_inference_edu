@@ -6,13 +6,13 @@ one at a time. It exposes evaluated-prefix and history counts, pause/resume,
 reset and unload. There is no pretrained-model installer or conversational
 assistant in this slice. No new Rust dependencies or parallel inference engine.
 
-**Current validation:** Swift source typechecks against the simulator and
-physical iOS SDKs; the real-bridge controller test passes on this M1 Mac.
-Simulator app linking/UI execution and physical-device validation are **not
-run**: Rust iOS targets are absent and Xcode's CoreSimulator framework is missing.
-Project/plist syntax checks pass, but Xcode project loading itself is blocked
-by the missing framework. This is source/build configuration, not a certified
-runnable phone app. T21 remains unchecked; owner review pending.
+**Current validation (2026-10-04):** the app runs in the iPhone 14 Simulator
+on the owner's M1 Pro. Both UI tests and 115 Rust engine/bridge tests pass there.
+Host formatting, Clippy and all 117 workspace tests pass. Release Simulator and
+unsigned physical-device builds pass. Rust iOS targets, Xcode first-launch
+components and the arm64 iOS 27.0 runtime were installed after owner approval.
+No physical phone is connected. T21 remains unchecked; physical parity,
+real-model admission, memory/thermal qualification and owner review are pending.
 
 ## Simulator first
 
@@ -31,6 +31,9 @@ rustup target add --toolchain 1.90 aarch64-apple-ios-sim aarch64-apple-ios
 The project runs `build-rust.sh`: it uses Rust 1.90 explicitly, checks the target
 before building offline, and writes separate simulator/device static archives.
 Both are arm64; they cannot be substituted for one another or the Mac archive.
+Cargo's build scripts/procedural macros execute on the Mac: the script supplies
+a Mac SDK environment default for those host tools. Rust and native target
+components resolve the explicit iOS SDK separately.
 Only arm64 builds are supported in this slice. No global developer-directory,
 account, team, provisioning, or signing settings are changed by our scripts.
 
@@ -46,7 +49,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 List available simulators using scoped `DEVELOPER_DIR` and `xcrun simctl list
 devices available`; choose a real listed UUID. Do not invent a device/runtime.
-Run the checked-in UI test (replace `SIMULATOR_UUID`):
+Run the checked-in UI tests (replace `SIMULATOR_UUID`; use a fresh result path):
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
@@ -57,12 +60,45 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-The test checks `[41,53,41,50]`, exact counters, background/foreground pause,
-explicit resume, finished-state preservation, reset and unload. It has not run.
-Once running, manually test Simulator → Debug → Simulate Memory Warning during
-load and token requests. Confirm state becomes Unloaded, old callbacks do not
-restore it, and reload starts an empty session. Record screenshots and actual
-runtime/device identity. Actual OS memory pressure is a separate physical test.
+The two tests passed on `Inference Lab iPhone 14`, UUID
+`66CC7053-4EFC-4007-8A25-9FF7450CB411`, arm64 iOS 27.0/build24A434,
+using Xcode27.0/build27A266a on M1Pro16GiB/macOS26.6.2/build25G83.
+They check `[41,53,41,50]`, exact counters, Home/foreground pause, explicit
+resume, finished-state preservation, reset, unload, empty-session foreground
+reload, and notification-driven closure/reload. The initial test exposed a
+disabled Load button: activity must be observable and scene phase must come
+from the window's view. The corrected tests pass without changing expectations.
+
+Xcode 27 shows simulated devices in **Xcode → Open Developer Tool → Device Hub**
+([Apple Device Hub](https://developer.apple.com/documentation/xcode/device-hub)).
+The Debug app includes a **Memory-warning demo** button. It posts the public
+UIKit notification to exercise the app's listener; the button is absent from
+Release. This is synthetic notification delivery, not OS memory exhaustion,
+jetsam or physical pressure qualification. Manual inspection also confirmed
+`41` with visibly rendered `Evaluated: 3 · History: 4`, then notification-driven
+Unloaded state. Logs, result bundles and screenshots are ignored under
+`docs/evidence/t21-*`; evidence is local rather than bundled in Git.
+
+Run the existing numerical and bridge tests inside an explicitly booted
+Simulator, with no downloads or auto-created devices (repeat for
+`llm_cpu_bridge` instead of `llm_inference`):
+
+```sh
+task_rustc=$(rustup which --toolchain 1.90 rustc)
+task_cargo=$(rustup which --toolchain 1.90 cargo)
+task_sdk=$(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --sdk macosx --show-sdk-path)
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT="$task_sdk" \
+  RUSTC="$task_rustc" CARGO_TARGET_DIR="$PWD/target/iphone-rust" \
+  INFERENCE_SIMULATOR_UUID=SIMULATOR_UUID \
+  CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER="/bin/sh $PWD/apple/iphone/run-simulator-test.sh" \
+  "$task_cargo" test --offline --locked --release -p llm_inference \
+    --target aarch64-apple-ios-sim --tests -- --test-threads=1
+```
+
+Actual results: 107 engine tests plus 8 bridge tests pass. These cover independent
+operator/intermediate/logit references and real Rust failure/cancellation/cache
+contracts on iOS Simulator. They establish portability, not phone throughput,
+physical GPU/ANE execution or an admission budget.
 
 ## Mac controller check
 
@@ -74,12 +110,18 @@ This builds the Mac Rust bridge and controller with Swift 6/warnings as errors.
 It tests independent expected tokens/counters, duplicate-request rejection,
 pause during load and requests, background/foreground during prompt/reset,
 memory-warning handler closure, stale callbacks, reload and missing-resource
-failure. It does **not** simulate iOS lifecycle delivery or phone memory pressure.
+failure, and synthetic terminal-failure display invalidation. The failure hook
+is compiled only into this Mac check, not the shipped app; it tests the controller
+transition rather than injecting a Rust fault. It does **not** simulate iOS
+lifecycle delivery or phone memory pressure.
 
 ## Physical iPhone after simulator validation
 
-Connect/trust the iPhone 14, enable Developer Mode, and check Xcode Window →
-Devices and Simulators. The owner selects their signing team in Xcode; credentials
+Connect/unlock/trust the iPhone 14, enable Developer Mode, and check Xcode 27
+Device Hub. Older Xcode versions use Window → Devices and Simulators.
+`devicectl list devices` can include simulated devices: check the Reality column.
+The final listing here contains only `simulated`, so physical checks are **not run**.
+The owner selects their signing team in Xcode; credentials
 are never changed by scripts. Select the phone and repeat the tiny-model UI tests
 and manual lifecycle/memory checks. Record actual phone/OS, memory footprint,
 load/unload release, power/thermal state and a bounded repeated run. Build-only

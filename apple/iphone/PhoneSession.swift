@@ -16,7 +16,7 @@ final class PhoneSession: ObservableObject {
     @Published private(set) var message = "Load the bundled engine demo to begin."
     private var client: CPUClient?
     private var epoch: UInt64 = 0
-    private var active = true
+    @Published private var active = true
     private var finished = false
     private let fixture: URL
     var canLoad: Bool { active && !busy && client == nil }
@@ -24,6 +24,7 @@ final class PhoneSession: ObservableObject {
     var canStep: Bool { active && ready && !busy && !paused && history > 0 && !finished }
     var canReset: Bool { active && ready && !busy }
     var hasSession: Bool { client != nil || busy }
+    var canPause: Bool { hasSession && !paused && state != "Failed" }
 
     init(fixture: URL) { self.fixture = fixture }
 
@@ -114,7 +115,7 @@ final class PhoneSession: ObservableObject {
         }) else { busy = false; message = "Engine is busy; no second request was queued."; return }
     }
     func pause() {
-        guard hasSession else { return }
+        guard canPause else { return }
         paused = true
         if let client, client.setCancelled(true) != UInt32(AIE_OK) { fail("Cancellation unavailable; unload to recover."); return }
         state = "Paused"; message = "Paused. Work already in flight may finish its token boundary."
@@ -141,6 +142,14 @@ final class PhoneSession: ObservableObject {
     }
     func memoryWarning() { unload(reason: "Memory warning: the session was closed. Load again when appropriate.") }
     private func fail(_ text: String) {
-        busy = false; ready = false; state = "Failed"; message = text
+        busy = false; ready = false; finished = false
+        processed = 0; history = 0; tokens = []
+        state = "Failed"; message = text + " Cache state unavailable."
     }
+    #if PHONE_SESSION_SMOKE
+    // Controller state regression only; excluded from shipping app builds.
+    func failForSmokeTest() {
+        fail("Synthetic terminal engine failure. Unload, then reload.")
+    }
+    #endif
 }

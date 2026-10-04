@@ -70,4 +70,6 @@ contract, eight-position admission and artifact verification are in
 
 The tiny-model SwiftUI project and staged simulator/device instructions are in
 [iphone/README.md](iphone/README.md). Swift SDK checks and Mac controller tests
-pass; simulator execution and physical-phone validation remain blocked by setup.
+pass; platform app builds and both Simulator UI tests pass after approved setup.
+The Simulator also passes 107 engine and 8 bridge Rust tests. Physical-phone
+validation and its resource budget remain pending.

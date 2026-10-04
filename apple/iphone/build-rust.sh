@@ -21,7 +21,12 @@ fi
 # Simulator and physical-device libraries must never share an architecture-only
 # path; they both use arm64 but have distinct Mach-O platform identities.
 cd "$task_root"
-RUSTC="$task_rustc" CARGO_TARGET_DIR="$task_root/target/iphone-rust" \
+# Cargo also compiles build scripts/procedural macros for the Mac host. Xcode's
+# exported iOS SDKROOT makes their native linker look for the wrong libSystem.
+# Use the Mac SDK as the environment default; rustc and cc select the explicit
+# iOS target SDK independently (and ignore a SDKROOT from the wrong platform).
+task_host_sdk=$(xcrun --sdk macosx --show-sdk-path)
+SDKROOT="$task_host_sdk" RUSTC="$task_rustc" CARGO_TARGET_DIR="$task_root/target/iphone-rust" \
   IPHONEOS_DEPLOYMENT_TARGET=17.0 "$task_cargo" build --offline --locked \
   --release -p llm_cpu_bridge --target "$task_target"
 mkdir -p "$task_root/target/iphone/$PLATFORM_NAME"

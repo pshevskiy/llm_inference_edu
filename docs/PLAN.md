@@ -1383,6 +1383,88 @@ Y = [[-2, 4], [-2, 13]]
   explains execution order, concrete3/4→4/5pending-token trace, mechanical
   sympathy and one bounded unsolved cache-versus-transcript exercise.
 
+**T21 approved setup and Simulator validation — 2026-10-04**
+
+- **Status:** Simulator teaching app runs and passes synthetic numerical/UI
+  validation. T21 remains unchecked: no connected physical phone, signed build,
+  phone memory/thermal measurements, real-model admission or sustained runs.
+  Owner review/understanding pending. No second ticket implemented.
+- **Authorized setup/identity:** owner replied “approve” to existing-toolchain
+  iOS targets and Xcode first-launch/runtime installation. `rustup target add
+  --toolchain 1.90 aarch64-apple-ios-sim aarch64-apple-ios`, scoped Xcode
+  `xcodebuild -runFirstLaunch` and `xcodebuild -downloadPlatform iOS
+  -architectureVariant arm64` exit0. The arm64 runtime download was8.05GB.
+  Actual host M1Pro/MacBookPro18,3/16GiB, macOS26.6.2/build25G83;
+  Xcode27.0/build27A266a, SDK27.0. Dedicated simulated iPhone14 UUID
+  `66CC7053-4EFC-4007-8A25-9FF7450CB411`, iOS27.0/runtime build24A434.
+  Global developer path remains CommandLineTools; scoped DEVELOPER_DIR only.
+  No account/team/provisioning/credential changes or model download.
+- **Files/fixes:** `apple/iphone/{PhoneApp,PhoneSession,PhoneSessionSmoke,
+  PhoneUITests}.swift`, build/controller scripts, new `run-simulator-test.sh`,
+  Xcode project/shared scheme, both Apple READMEs and lesson21. Existing Rust
+  production engine/bridge/CPUClient unchanged; no dependency added. Cross-build
+  gives Mac build scripts/proc macros a Mac SDK and resolves explicit target
+  SDKs separately; fixes initial `library System not found`. Separate arm64
+  device/Simulator archives remain mandatory. Window-scoped scene phase plus
+  published activity fixes disabled Load discovered by the first UI test.
+  Verbatim counter text fixes visible interpolation. Terminal failure clears
+  displayed cache/tokens and survives scene transitions. Debug-only public
+  memory-warning notification demo is excluded from Release. One worker/request,
+  bounded off-main reads and four display tokens preserve the resource design;
+  physical performance has not been measured.
+- **Host checks:** `cargo fmt --all -- --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`: all exit0,
+  117tests pass/0fail, 0doc tests. `/bin/sh apple/iphone/check-controller.sh`
+  exit0 with Swift6/warnings-as-errors, including actual bridge token/counter,
+  pause/reset/load races and synthetic controller terminal-failure invalidation.
+  Project/plist lint and shell syntax exit0. Full exact reproducer commands and
+  separate platform builds are in `apple/iphone/README.md` and ignored
+  `docs/evidence/t21-approved-checks.md`.
+- **Platform checks:** scoped unsigned Release Simulator app build exit0;
+  final Debug `xcodebuild ... build-for-testing` exit0. Final unsigned Release
+  `-sdk iphoneos -destination generic/platform=iOS ... build` exit0. Mach-O
+  identities are Simulator7 vs iOS2, arm64/minimumOS17/SDK27. Build success is
+  separate from physical install/signing.
+- **Simulator execution:** final `xcodebuild -xctestrun
+  target/iphone-xcode/Build/Products/InferencePhone_iphonesimulator27.0-arm64.xctestrun
+  -destination platform=iOS\ Simulator,id=66CC7053-4EFC-4007-8A25-9FF7450CB411
+  -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1
+  -resultBundlePath docs/evidence/t21-simulator-final.xcresult
+  test-without-building`: exit0,2UI tests/0fail in62.328s. Exact IDs
+  `[41,53,41,50]`, prefix/history3/4→6/7, pending token at stop, Home/foreground
+  pause, explicit resume, finished-state retention, reset/unload/reload and
+  notification listener closure/reload checked. First failed UI run (exit65)
+  retained, expected values unchanged. Manual screen confirms token41 and
+  visible3/4; notification demo produces Unloaded with emptytokens/0/0.
+- **iOS Rust checks:** pinned1.90 Cargo, host Mac SDK and explicit booted-device
+  runner execute existing release tests using `cargo test --offline --locked
+  --release -p llm_inference --target aarch64-apple-ios-sim --tests --
+  --test-threads=1`, repeated for `llm_cpu_bridge`: both exit0,107engine+8bridge
+  tests pass. Independent operator/intermediate/teacher-forced logits and actual
+  Rust panic/post-KV terminal-failure/cancellation invariants pass on Simulator.
+  The Swift smoke failure hook checks display transitions rather than injecting
+  Rust faults; the Debug button injects a public notification rather than OS
+  pressure. Neither proves jetsam behavior or actual physical memory release.
+- **Evidence:** ignored `docs/evidence/t21-approved-{fmt,clippy,tests}.txt`,
+  `t21-approved-mac-controller.txt`, `t21-approved-setup-results.json`,
+  `t21-{rust-ios-install,xcode-first-launch,simulator-runtime-install}.txt`,
+  `t21-simulator-{build-fixed,final-build,final-ui-tests,rust-tests,bridge-tests}.txt`,
+  `t21-device-final-release-build.txt`, final `.xcresult`, platform identity
+  logs, runtime/device JSON and `t21-simulator-{pending-token,
+  notification-unloaded}.png`. Earlier failures preserved for diagnosis.
+- **Remaining/follow-up:** final scoped `xcrun devicectl list devices
+  --json-output docs/evidence/t21-connected-devices-final.json --timeout 20`
+  exits0; only Reality=`simulated`, no physical phone. In Xcode27 use Open
+  Developer Tool→Device Hub. Connect/unlock/trust iPhone14, enable Developer Mode,
+  owner selects signing team, then run synthetic physical parity/lifecycle and
+  measure memory release/headroom before real-model admission. Actual OS memory
+  pressure, signed/physical/model/sustained tests **not run** for these gates.
+  Next proposed work remains physical T21 qualification. Lesson21 explains
+  execution order, exact pending-token trace and one unsolved epoch exercise.
+- **Review:** final GPT-6 Astra review approved code, commands, saved test
+  results and screenshots with no remaining actionable findings. Reviewer ran
+  no additional workloads. Owner review/understanding remains pending.
+
 **Ownership decision:** Rust owns tokenization integration, token history, sampling, and policies. CPU sessions own Rust KV storage; Core ML sessions own native state. A thin native driver may invoke the shared Rust generation policy and the selected execution path. Do not duplicate the production sampler or keep two complete model copies just to cross the language boundary. Finalize this small contract from the working implementations, not from speculative traits.
 
 **Gate:** Same numerical/generation contracts across paths, with declared exceptions. Desktop success does not certify the phone. iPad remains unqualified until a device is actually tested.

@@ -5,10 +5,12 @@ import XCTest
 final class PhoneUITests: XCTestCase {
     @MainActor
     func testTokensPauseBackgroundResetAndUnload() {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
         let load = app.buttons["load"]
         XCTAssertTrue(load.waitForExistence(timeout: 10))
+        waitEnabled(load)
         tap(app, "load")
         waitEnabled(app.buttons["prepare"])
         tap(app, "prepare")
@@ -39,6 +41,36 @@ final class PhoneUITests: XCTestCase {
         waitLabel(app.staticTexts["counts"], "Evaluated: 0 · History: 0")
         tap(app, "unload")
         waitLabel(app.staticTexts["state"], "Unloaded")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        waitEnabled(load) // an empty session must re-enable loading on foreground
+        tap(app, "load")
+        waitEnabled(app.buttons["prepare"])
+        tap(app, "unload")
+        waitLabel(app.staticTexts["state"], "Unloaded")
+    }
+
+    @MainActor
+    func testDebugMemoryWarningClearsAndAllowsReload() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        waitEnabled(app.buttons["load"])
+        tap(app, "load")
+        waitEnabled(app.buttons["prepare"])
+        tap(app, "prepare")
+        waitEnabled(app.buttons["step"])
+        tap(app, "step")
+        waitLabel(app.staticTexts["tokens"], "41")
+        waitLabel(app.staticTexts["counts"], "Evaluated: 3 · History: 4")
+        tap(app, "memory-warning-demo")
+        waitLabel(app.staticTexts["state"], "Unloaded")
+        waitLabel(app.staticTexts["tokens"], "No emitted tokens yet")
+        waitLabel(app.staticTexts["counts"], "Evaluated: 0 · History: 0")
+        tap(app, "load")
+        waitEnabled(app.buttons["prepare"])
+        tap(app, "unload")
+        waitLabel(app.staticTexts["state"], "Unloaded")
     }
 
     @MainActor
@@ -46,7 +78,8 @@ final class PhoneUITests: XCTestCase {
         let button = app.buttons[identifier]
         for _ in 0..<4 {
             if button.isHittable { break }
-            app.swipeUp()
+            if button.frame.midY < app.frame.midY { app.swipeDown() }
+            else { app.swipeUp() }
         }
         XCTAssertTrue(button.isHittable, "Control is off screen: \(identifier)")
         button.tap()

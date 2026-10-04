@@ -76,6 +76,16 @@ struct PhoneSessionSmoke {
         precondition(session.ready && session.paused && session.history == 0)
         session.sceneActive(true)
         precondition(!session.canPrepare)
+        session.resume(); session.prepare()
+        try await settle(session)
+        session.step()
+        try await settle(session)
+        precondition(session.tokens == [41] && session.processed == 3 && session.history == 4)
+        session.failForSmokeTest()
+        precondition(session.tokens.isEmpty && session.processed == 0 && session.history == 0)
+        precondition(session.state == "Failed" && !session.ready && !session.canPrepare && !session.canStep)
+        session.sceneActive(false); session.sceneActive(true); session.pause()
+        precondition(session.state == "Failed" && !session.canPause)
         session.unload()
         try await Task.sleep(for: .milliseconds(100))
         session.load(); session.unload() // invalidate a pending fixture read
@@ -85,6 +95,6 @@ struct PhoneSessionSmoke {
         missing.load()
         try await settle(missing)
         precondition(missing.state == "Failed" && missing.canLoad)
-        print("Mac controller checks passed: tiny tokens [41,53,41,50], exact 3/4→6/7; pause/background/reset/unload/stale callbacks/memory-warning handler. Not iOS execution.")
+        print("Mac controller checks passed: tiny tokens [41,53,41,50], exact 3/4→6/7; pause/background/reset/unload/stale callbacks/memory-warning handler/terminal-failure display invalidation. Not iOS execution.")
     }
 }
