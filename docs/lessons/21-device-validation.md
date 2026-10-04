@@ -1,69 +1,90 @@
-# 21 — Physical-device qualification is still blocked
+# 21 — An iPhone host, with separate simulator and device gates
 
-A Mac static library is not an iPhone library. Rust code and every native
-component (including the tokenizer's C dependency) must be built for
-`aarch64-apple-ios`; a simulator uses a different target. The Swift application
-must then be built and signed with the owner's development team and provisioned
-for a reachable physical iPhone 14. None of these phone results are inferred
-from the successful Mac boundary checks.
+The phone host calls the same Rust inference engine through `CPUClient`.
+Swift owns the screen and request admission; Rust owns weights, K/V, token
+history, sampling and the forward pass. There is one worker and at most one
+outstanding request. UI refreshes never copy the model or evaluate tensors.
+The first app bundles the small synthetic model rather than pretrained weights.
 
-Readiness observed on 2026-10-03:
+Read `apple/iphone/README.md` for the Xcode project and exact follow-up commands.
+On 2026-10-04, Swift 6 source typechecking passed against the simulator and
+physical iOS SDKs. Controller integration checks passed against the real Rust
+bridge **on the Mac**. Xcode project loading failed because CoreSimulator is
+missing, and neither Rust iOS target is installed. No simulator executable was
+linked or run; no phone was signed, installed or tested. Owner review is pending.
 
-- Installed Xcode 27.0, iPhoneOS SDK27.0; global developer path now points at
-  Xcode. This task did not change that selection.
-- Installed Rust targets: `aarch64-apple-darwin`, `wasm32-wasip2`,
-  `x86_64-unknown-linux-musl`. No iOS target is installed.
-- Installed Xcode `devicectl list devices` produced no output within a15second
-  deadline; the owned child group was terminated. Device availability is
-  unknown. Earlier unbounded readiness commands were interrupted too.
-- Account, signing identity and provisioning were not inspected or changed.
-  No physical phone app was built, installed, signed or executed.
+## The central controller in execution order
 
-Follow-up readiness checks (read-only):
+1. `PhoneSession.load` admits work only while active and without an existing
+   client. It captures an epoch and reads at most 8 MiB + 1 bytes off the main
+   thread. Oversize, empty and missing files fail explicitly.
+2. After that read, an unchanged epoch permits `CPUClient` to open the tiny Rust
+   session. Loading and inference run on its worker. READY arrives on the main
+   queue; it enables actions while preserving any background/pause decision.
+3. `prepare` submits `[1,5,7]` with a four-token output limit. While busy, duplicate
+   actions are rejected. Responses carry the actual evaluated-prefix/history
+   counters; Swift does not guess cache progress.
+4. `step` asks Rust for one token. At most four displayed token IDs are retained
+   in Swift. Rust retains the complete, exact generation state.
+5. `pause` sets cancellation but leaves an in-flight response outstanding.
+   A token boundary may already have finished. Returning from background never
+   resumes automatically; explicit resume clears cancellation. Finished stays
+   finished even after pause/resume. Reset clears generation and restores pause
+   cancellation if backgrounding raced the reset.
+6. `unload` increments the epoch before closing the handle. Late callbacks or a
+   late fixture read are discarded. Model release is asynchronous; a new open
+   can report busy until the old worker releases its reservation. Memory warnings
+   call this same close-and-clear path. Cleared counters do not claim a valid K/V
+   prefix or a resumable transcript.
 
-```sh
-rustup target list --installed
-xcrun --sdk iphoneos --show-sdk-version
-```
+This follows mechanical sympathy by keeping numerics off the screen thread,
+reusing the existing worker/cache, preventing request backlogs, and avoiding
+parallel model copies. It is a resource design, not measured phone efficiency.
+A simulator runs on Mac hardware; physical memory, bandwidth and thermal limits
+still need measurement. No numerical kernel optimization is claimed here.
 
-In Xcode's **Window → Devices and Simulators**, check that the owner's physical
-phone is connected, trusted, in Developer Mode and available. This manual check
-is needed because CLI enumeration currently hangs. Installing the Rust iOS
-target requires an explicit owner decision under the original no-automatic-
-toolchain-installation instruction. After it exists, the concrete bridge build
-check is:
+## One concrete trace
 
-```sh
-cargo build --locked --release -p llm_cpu_bridge --target aarch64-apple-ios
-```
+The independently checked tiny fixture emits `[41,53,41,50]`:
 
-That command is not yet run and may expose tokenizer C cross-build requirements.
-Do not reuse the Mac archive or count a simulator result as physical validation.
-A signed device host still needs to be built with the owner's configured team;
-there is no claimed runnable iOS target in this repository yet.
+| Action | Evaluated prefix | History | Displayed tokens |
+|---|---:|---:|---|
+| Prepare `[1,5,7]` | 3 | 3 | empty |
+| Emit `41` | 3 | 4 | 41 |
+| Background, then explicitly resume | 3 | 4 | 41 |
+| Next step evaluates `41`, then emits `53` | 4 | 5 | 41, 53 |
+| Fourth emission | 6 | 7 | 41, 53, 41, 50 |
+| Observe output-limit stop | 6 | 7 | unchanged |
+| Reset | 0 | 0 | empty |
 
-When prerequisites are available, begin with the tiny fixture. Run the exact
-T20 token/counter trace and cancellation/resume/reset, and unload/reload; measure
-actual memory release rather than just removing a handle. Inject backgrounding
-at load, prefill and token boundaries; stop/suspend new requests predictably,
-then verify valid-prefix reuse or explicit reset. Test low-memory warnings with
-small synthetic data before allocating pretrained weights.
+The last emitted token stays pending at the output limit. A pause must not
+pretend that it was evaluated or advance counters. This trace passed on the Mac
+controller; it remains an expected trace for simulator and physical tests.
 
-Only then propose a phone-specific real-model admission budget using actual
-available headroom, measured footprint and logical weights/cache/workspace.
-Desktop C32 and16GB headroom do not define an iPhone budget. Load the already
-pinned checkpoint only if the budget admits it; otherwise mark real-model
-validation blocked rather than silently switching checkpoint or dtype. Retain
-short exact token IDs and teacher-forced numerical checks, offline behavior,
-load/unload/cancellation/suspension evidence and an explicitly bounded repeated
-run. Capture physical device/OS, power, thermal, memory-pressure signals and
-raw counters; write unavailable where the instrument cannot measure a field.
+## Why two arm64 libraries?
 
-Trace to verify on a future phone: prompt `[1,5,7]` evaluates3positions;
-emitting41 produces history4 with valid prefix3. Background suspension must not
-claim prefix4 before41 was evaluated. This is a proposed check, not a device
-result.
+`aarch64-apple-ios-sim` and `aarch64-apple-ios` share an instruction architecture
+but have different Mach-O platform identities. Rust and every native dependency
+must be cross-built for the chosen platform. The Xcode build stores archives in
+separate platform directories; it never links the Mac library into the phone.
+The current slice accepts arm64 only and fails clearly on unsupported requests.
+Scripts do not install targets or change accounts/signing settings.
 
-Exercise: at that3/4 state, choose which counters and volatile resources must be
-saved or invalidated before a phone memory warning closes the worker. Do not
-assume persistent transcript is the same thing as K/V.
+## Physical qualification remains open
+
+First pass simulator build/UI/lifecycle checks; then build/sign using the owner's
+team for a reachable, trusted Developer Mode iPhone 14. Run the same synthetic
+numerical trace, cancellation, load/unload, background/foreground and memory
+checks on that actual phone. Measure release rather than just removing a handle.
+Keep signed build, simulator and physical results separately labelled.
+
+Only then assess actual headroom, logical weights/cache/workspace and measured
+footprint for a pinned real model. Desktop C32 or 16 GB RAM does not define a
+phone budget. If it does not fit, report blocked rather than changing model,
+precision or history silently. Record phone/OS, thermal/power state, memory
+signals and bounded repeated-run counters; label unavailable measurements.
+
+Exercise: backgrounding occurs after emitting `41` at prefix/history `3/4`, then
+a memory warning closes the session. Which counters should the screen show,
+and can tapping Load resume using the old K/V? Explain the difference between
+a displayed token list and valid cache storage. Do not implement the answer yet.

@@ -65,3 +65,9 @@ regressions. Open the app in Finder for search, explicit installation/load,
 short plain-prompt chat, pause/resume, unload/reset and diagnostics. Full build
 contract, eight-position admission and artifact verification are in
 [lesson24](../docs/lessons/24-workbench.md). No iOS/signing claim.
+
+## iPhone development slice (T21)
+
+The tiny-model SwiftUI project and staged simulator/device instructions are in
+[iphone/README.md](iphone/README.md). Swift SDK checks and Mac controller tests
+pass; simulator execution and physical-phone validation remain blocked by setup.

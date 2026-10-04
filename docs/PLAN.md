@@ -1318,6 +1318,71 @@ Y = [[-2, 4], [-2, 13]]
   the readiness record and qualification boundaries before commit. Next
   independent ticket: T22 Hub discovery on Mac; phone gate remains blocked.
 
+
+**T21 iPhone app continuation — 2026-10-04**
+
+- **Status:** tiny-model SwiftUI host and Xcode app/UI-test targets implemented;
+  simulator linking/execution and physical validation blocked by setup. T21
+  remains unchecked; owner review pending. No phone compatibility, physical
+  memory, pretrained-model or throughput claim.
+- **Files:** `apple/iphone/PhoneApp.swift`, `PhoneSession.swift`,
+  `PhoneSessionSmoke.swift`, `PhoneUITests.swift`, `build-rust.sh`,
+  `check-controller.sh`, `Info.plist`, Xcode project/shared scheme and README;
+  `apple/README.md`, lesson21 and scoped Xcode user-state ignore rules. Shared
+  CPUClient/bridge/numerical engine unchanged; no new dependency.
+- **Working slice:** bundled435,741-byte tiny fixture only; explicit prepare,
+  single-token step, evaluated-prefix/history display, pause/resume/reset/unload.
+  One Rust worker/one admitted request; off-main bounded fixture read/inference;
+  at most4display tokens. Scene inactivity requests cancellation and requires
+  explicit resume. Epochs discard stale reads/callbacks after close or memory
+  warnings; reset restores concurrent pause, finished stays finished. Archive
+  paths separate simulator/device despite both using arm64; unsupported
+  architectures fail before build. No install/download/signing/account changes.
+- **Actual checks:** `cargo fmt --all -- --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`: exit0,
+  117tests passed/0failed, 0doc tests. `cargo build --offline --locked --release
+  -p llm_cpu_bridge`: exit0 on Mac. `/bin/sh apple/iphone/check-controller.sh`:
+  exit0, Swift6/warnings-as-errors build and real-bridge Mac controller checks
+  passed: independent `[41,53,41,50]`, exact3/4→6/7, duplicate admission,
+  background during load/prompt/reset, pause/cancellation, memory-warning handler,
+  close/reload/stale callbacks, missing-resource failure. These are Mac tests,
+  not simulator or physical lifecycle/memory-pressure evidence.
+- **SDK checks:** scoped Xcode `xcrun swiftc -typecheck` with Swift6 and warnings
+  as errors: exit0 for app/shared-client/controller on
+  `arm64-apple-ios17.0-simulator` and `arm64-apple-ios17.0`, each using its actual
+  27.0 SDK; UI-test source simulator typecheck exit0 (XCTest framework/Swift
+  overlay paths explicit). `plutil -lint` project/plist exit0; shell syntax
+  checks exit0. Source typechecking is not app linking/project loading/UI runs.
+- **Setup evidence:** actual M1Pro/arm64 Mac, macOS26.6.2/build25G83; Xcode27.0/
+  build27A266a. Current global developer directory is CommandLineTools; all
+  Xcode commands use scoped DEVELOPER_DIR, no global selection change. Neither
+  Rust iOS target is installed. `PLATFORM_NAME=iphonesimulator /bin/sh
+  apple/iphone/build-rust.sh` exits1 with explicit missing-target instruction;
+  unsupported ARCHS=x86_64 exits1 before building. Scoped `xcodebuild -list
+  -project apple/iphone/InferencePhone.xcodeproj` exits70: missing
+  `/Library/Developer/PrivateFrameworks/CoreSimulator.framework`. Initial scoped
+  `xcrun simctl list devices available` exits126 for the same missing framework;
+  no available runtime/device established. Rust-target/component setup opt-in
+  questions are pending under no-automatic-install instruction.
+- **Evidence:** ignored `docs/evidence/t21-{fmt,clippy,tests}.txt`,
+  `t21-mac-{bridge-build,controller-build,controller-smoke,controller-check}.txt`,
+  `t21-{ios-typecheck,device-swift-typecheck,ios-uitest-typecheck}.txt`,
+  `t21-{project-plist-lint,ios-rust-preflight,architecture-preflight,
+  xcode-project-list}.txt`; exact SDK commands in `t21-app-checks.md`.
+- **Not run/follow-up:** iOS Rust cross-build, linked app, simulator install/UI
+  test/manual memory-warning/background validation, phone signing/install,
+  synthetic physical parity, actual memory-pressure/release/thermal measurements,
+  real-model phone admission and sustained tests. `apple/iphone/README.md` gives
+  exact setup/build/test commands and manual phone gates. After setup approval,
+  first finish the simulator build and recorded UI tests; then owner signing/
+  reachable iPhone14 and synthetic physical checks; assess real-model headroom
+  only after those gates. No next ticket implemented.
+- **Review/learning:** Astra reviewed lifecycle/token contracts and requested
+  explicit arm64 constraints; fixed in project and Rust build preflight. Final
+  Astra review approved this slice with no remaining actionable findings. Lesson21
+  explains execution order, concrete3/4→4/5pending-token trace, mechanical
+  sympathy and one bounded unsolved cache-versus-transcript exercise.
+
 **Ownership decision:** Rust owns tokenization integration, token history, sampling, and policies. CPU sessions own Rust KV storage; Core ML sessions own native state. A thin native driver may invoke the shared Rust generation policy and the selected execution path. Do not duplicate the production sampler or keep two complete model copies just to cross the language boundary. Finalize this small contract from the working implementations, not from speculative traits.
 
 **Gate:** Same numerical/generation contracts across paths, with declared exceptions. Desktop success does not certify the phone. iPad remains unqualified until a device is actually tested.

@@ -3,3 +3,7 @@
 /reference/.venv/
 __pycache__/
 /models/
+
+# Per-user Xcode state; shared project and scheme stay tracked.
+apple/iphone/**/xcuserdata/
+apple/iphone/**/*.xcuserstate
